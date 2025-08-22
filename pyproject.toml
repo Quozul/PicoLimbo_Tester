@@ -1,0 +1,15 @@
+[project]
+name = "pico-limbo-integration-tests"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13"
+dependencies = [
+    "black>=25.1.0",
+    "libevdev>=0.12",
+    "minecraft-launcher-lib>=7.1",
+    "pillow>=11.3.0",
+    "psutil>=7.0.0",
+    "pyscreenshot>=3.1",
+    "python-uinput>=1.0.1",
+    "screeninfo>=0.8.1",
+]
