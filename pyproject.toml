@@ -4,11 +4,11 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.13"
 dependencies = [
-    "black>=25.1.0",
-    "libevdev>=0.12",
-    "minecraft-launcher-lib>=7.1",
-    "pillow>=11.3.0",
-    "psutil>=7.0.0",
+    "black>=26.5.0",
+    "libevdev>=0.13",
+    "minecraft-launcher-lib>=8.0",
+    "pillow>=12.2.0",
+    "psutil>=7.2.0",
     "pyscreenshot>=3.1",
     "python-uinput>=1.0.1",
     "screeninfo>=0.8.1",

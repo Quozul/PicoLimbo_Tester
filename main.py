@@ -10,7 +10,6 @@ import fcntl
 from virtual_devices import VirtualInputController
 from wait_for_quit_button import wait_for_screen_region
 
-
 GAME_DIRECTORY = str(pathlib.Path().resolve().joinpath("minecraft"))
 REPORTS_DIRECTORY = "integration_tests_reports"
 
@@ -117,13 +116,15 @@ def log_to_multiplayer(version: str, virtual_device: VirtualInputController) -> 
         raise Exception(f"Could not find a window for {version}")
 
     window_info = get_window_info(window_id)
+    print("window info=", window_info)
 
-    click_in_minecraft_window(virtual_device, 426, 283, window_info)
+    # 37 is window decoration
+    click_in_minecraft_window(virtual_device, 426, 283 - 37, window_info)
     if version.startswith("1.7."):
-        click_in_minecraft_window(virtual_device, 425, 171, window_info)
+        click_in_minecraft_window(virtual_device, 425, 171 - 37, window_info)
     else:
-        click_in_minecraft_window(virtual_device, 426, 103, window_info)
-    click_in_minecraft_window(virtual_device, 217, 391, window_info)
+        click_in_minecraft_window(virtual_device, 426, 103 - 37, window_info)
+    click_in_minecraft_window(virtual_device, 217, 391 - 37, window_info)
     return True
 
 
@@ -324,6 +325,9 @@ def run_test_suite(versions_to_test: list[str]):
 
 def get_versions_to_test(config_set="all"):
     all_versions = [
+        "26.1",
+        "1.21.11",
+        "1.21.9",
         "1.21.7",
         "1.21.6",
         "1.21.5",
@@ -384,7 +388,6 @@ def get_versions_to_test(config_set="all"):
 
     version_sets = {
         "configuration": filter_since_version(all_versions, "1.20.2"),
-        "world": filter_since_version(all_versions, "1.19"),
         "registries": filter_since_version(all_versions, "1.16"),
         "modern": filter_since_version(all_versions, "1.13"),
         "legacy": filter_since_version(all_versions, "1.7.2"),
