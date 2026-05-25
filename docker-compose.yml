@@ -1,0 +1,15 @@
+services:
+  picolimbo:
+    expose:
+      - 25565
+    image: picolimbo:latest
+
+  pico-tests:
+    ports:
+      - "5900:5900"
+      - "6080:6080" # webvnc server: http://localhost:6080/vnc.html
+    volumes:
+      - ./integration_tests_reports:/app/integration_tests_reports
+    build: .
+    depends_on:
+      - picolimbo

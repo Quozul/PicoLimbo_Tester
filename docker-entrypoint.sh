@@ -28,11 +28,6 @@ x11vnc -display :1 -nopw -listen 0.0.0.0 -xkb -forever -rfbport 5900 >/dev/null 
 websockify --web /usr/share/novnc/ 6080 localhost:5900 >/dev/null 2>&1 &
 
 echo "Started VNC server on http://localhost:6080/vnc.html"
-echo "Starting tests in 2s"
-sleep 1
-echo "Starting tests in 1s"
-sleep 1
-echo "Running tests now."
 
 # Run the integration tests, forwarding any extra arguments.
 exec uv run python main.py "$@"

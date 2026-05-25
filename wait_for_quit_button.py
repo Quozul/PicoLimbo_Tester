@@ -58,14 +58,15 @@ def wait_for_screen_region(
 
     start_time = time.monotonic()
     x, y, width, height = region
+    print(f"Watching screen region x={x} y={y} w={width} h={height} (timeout={timeout}s)")
+    last_capture: Image.Image | None = None
 
     while time.monotonic() - start_time < timeout:
         # Grab the current screen content in the specified region
         current_image = ImageGrab.grab(bbox=(x, y, x + width, y + height)).convert(
             "RGB"
         )
-        # You might want to remove this save in production, it's for debugging
-        # current_image.save("current_capture.png")
+        last_capture = current_image
 
         # Compare the current screen against each pre-loaded reference image
         for filename, ref_image in ref_images:
@@ -83,4 +84,8 @@ def wait_for_screen_region(
     print(
         f"Timeout: Screen region did not match any reference image within {timeout} seconds."
     )
+    if last_capture is not None:
+        debug_path = "current_capture.png"
+        last_capture.save(debug_path)
+        print(f"  Last captured region saved to {debug_path} for inspection.")
     return False
