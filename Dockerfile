@@ -28,7 +28,8 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --no-dev
 
-COPY . .
+COPY *.py ./
+COPY docker-entrypoint.sh ./
 
 # Use the Xvfb virtual display and force Mesa software rendering
 # (no physical GPU is available inside the container).

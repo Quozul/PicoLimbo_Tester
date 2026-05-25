@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Start a virtual X display at a resolution large enough to house the 854x480
 # Minecraft window with room for a window manager title bar.
-Xvfb :1 -screen 0 1920x1080x24 -ac &
+Xvfb :1 -screen 0 854x480x24 -ac &
 XVFB_PID=$!
 
 export DISPLAY=:1

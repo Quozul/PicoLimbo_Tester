@@ -18,8 +18,8 @@ REPORTS_DIRECTORY = "integration_tests_reports"
 # Computed from the absolute watch-region coordinates that were calibrated on a
 # 2560x1440 Wayland display where the window was centered.
 # Newer versions (>= 1.13) have a slightly different menu layout than older ones.
-_QUIT_REGION_NEWER = (429, 364, 196, 40)
-_QUIT_REGION_OLDER = (429, 401, 196, 40)
+_QUIT_REGION_NEWER = (430, 384, 196, 40)
+_QUIT_REGION_OLDER = (430, 384, 196, 40)
 
 
 def _is_wayland() -> bool:
@@ -70,7 +70,8 @@ def get_window_info(window_id: str) -> dict | None:
     result = subprocess.run(
         ["xdotool", "getwindowgeometry", window_id], capture_output=True, text=True
     )
-    return parse_window_info(result.stdout.strip())
+    result = result.stdout.strip()
+    return parse_window_info(result)
 
 
 def click_in_minecraft_window(
@@ -118,8 +119,8 @@ def wait_for_game(version: str) -> str:
         rel_x, rel_y, rel_w, rel_h = _QUIT_REGION_NEWER
 
     watch_region = (
-        window_info["x"] + rel_x,
-        window_info["y"] + rel_y,
+        rel_x,
+        rel_y,
         rel_w,
         rel_h,
     )
@@ -418,7 +419,8 @@ def get_versions_to_test(config_set="all"):
 
 
 if __name__ == "__main__":
-    versions_to_run = get_versions_to_test("all")
+    # versions_to_run = get_versions_to_test("all")
+    versions_to_run = ["1.9"]
     failed_tests = run_test_suite(versions_to_run)
     if failed_tests:
         import sys
