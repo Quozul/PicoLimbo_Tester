@@ -27,10 +27,15 @@ def parse_window_info(window_text):
         width = int(geometry_match.group(1))
         height = int(geometry_match.group(2))
 
-        x_offset = 61
-        y_offset = 92
+        # wayland adds a margin around the window of 25 pixels
+        width = width - 50
+        # 36 pixels is the height of the window decoration
+        height = height - 50 - 36
+        x = x + 25
+        y = y + 25 + 36
+        # like this, we can get the inner window dimensions
 
-        return {"x": x + x_offset, "y": y + y_offset, "width": width, "height": height}
+        return {"x": x, "y": y, "width": width, "height": height}
     else:
         return None
 
@@ -70,10 +75,19 @@ def get_window_info(window_id):
 def click_in_minecraft_window(
     mouse: VirtualInputController, relative_x: int, relative_y: int, window_info
 ):
+    """
+
+    :param mouse:
+    :param relative_x: the x coordinate inside the window we want to click at
+    :param relative_y: the y coordinate inside the window we want to click at
+    :param window_info: the information about the window, such as the absolute position of the window
+    :return:
+    """
     if window_info:
         absolute_x = window_info["x"] + relative_x
         absolute_y = window_info["y"] + relative_y
 
+        print(f"  clicking at screen ({absolute_x}, {absolute_y})")
         mouse.move_to(absolute_x, absolute_y)
         time.sleep(0.1)
         mouse.click()
@@ -118,13 +132,13 @@ def log_to_multiplayer(version: str, virtual_device: VirtualInputController) -> 
     window_info = get_window_info(window_id)
     print("window info=", window_info)
 
-    # 37 is window decoration
-    click_in_minecraft_window(virtual_device, 426, 283 - 37, window_info)
+    click_in_minecraft_window(virtual_device, 426, 283, window_info)
+    # the buttons are slightly offseted depending on the version
     if version.startswith("1.7."):
-        click_in_minecraft_window(virtual_device, 425, 171 - 37, window_info)
+        click_in_minecraft_window(virtual_device, 425, 171, window_info)
     else:
-        click_in_minecraft_window(virtual_device, 426, 103 - 37, window_info)
-    click_in_minecraft_window(virtual_device, 217, 391 - 37, window_info)
+        click_in_minecraft_window(virtual_device, 426, 103, window_info)
+    click_in_minecraft_window(virtual_device, 217, 391, window_info)
     return True
 
 

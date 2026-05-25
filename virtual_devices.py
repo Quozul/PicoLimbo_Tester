@@ -54,8 +54,9 @@ class VirtualKeyboard:
 
 class VirtualTablet:
     """
-    A class to control a virtual absolute pointing device (like a tablet)
-    using libevdev and the uinput kernel module.
+    A virtual absolute pointing device using libevdev/uinput.
+    Absolute coordinates map directly to screen pixels, avoiding the
+    coordinate-tracking complexity of a relative mouse device.
     """
 
     def __init__(self):
@@ -72,17 +73,14 @@ class VirtualTablet:
             self.screen_width = primary_monitor.width
             self.screen_height = primary_monitor.height
         except StopIteration:
-            print("Could not determine primary monitor. Using first available.")
             if get_monitors():
                 monitor = get_monitors()[0]
                 self.screen_width = monitor.width
                 self.screen_height = monitor.height
-            else:
-                print("No monitors found. Using fallback 1920x1080.")
 
     def _create_device(self):
         device = libevdev.Device()
-        device.name = "Python Absolute Pointer (Robust)"
+        device.name = "Python Virtual Tablet"
 
         device.enable(
             libevdev.EV_ABS.ABS_X,
@@ -93,17 +91,15 @@ class VirtualTablet:
             libevdev.InputAbsInfo(minimum=0, maximum=self.screen_height - 1),
         )
         device.enable(libevdev.EV_KEY.BTN_LEFT)
-        device.enable(libevdev.EV_KEY.BTN_TOOL_PEN, 1)
-        device.enable(libevdev.EV_KEY.BTN_TOUCH, 1)
+        device.enable(libevdev.EV_KEY.BTN_TOOL_PEN)
+        device.enable(libevdev.EV_KEY.BTN_TOUCH)
 
         try:
             self.uinput_device = device.create_uinput_device()
             time.sleep(0.5)
         except OSError as e:
-            print(f"Error creating uinput device: {e}")
-            print(
-                "Please ensure you have set the udev rules correctly and re-logged in."
-            )
+            print(f"Error creating virtual tablet: {e}")
+            print("Please ensure you have the correct udev permissions.")
             raise
 
     def _pen_down(self):
@@ -111,6 +107,7 @@ class VirtualTablet:
             events = [
                 libevdev.InputEvent(libevdev.EV_KEY.BTN_TOOL_PEN, value=1),
                 libevdev.InputEvent(libevdev.EV_KEY.BTN_TOUCH, value=1),
+                libevdev.InputEvent(libevdev.EV_SYN.SYN_REPORT, value=0),
             ]
             self.uinput_device.send_events(events)
             self.is_pen_down = True
@@ -120,6 +117,7 @@ class VirtualTablet:
             events = [
                 libevdev.InputEvent(libevdev.EV_KEY.BTN_TOOL_PEN, value=0),
                 libevdev.InputEvent(libevdev.EV_KEY.BTN_TOUCH, value=0),
+                libevdev.InputEvent(libevdev.EV_SYN.SYN_REPORT, value=0),
             ]
             self.uinput_device.send_events(events)
             self.is_pen_down = False
@@ -140,18 +138,13 @@ class VirtualTablet:
     def click(self):
         if not self.uinput_device:
             return
-        self._pen_down()
-        click_events = [
+        events = [
             libevdev.InputEvent(libevdev.EV_KEY.BTN_LEFT, value=1),
             libevdev.InputEvent(libevdev.EV_SYN.SYN_REPORT, value=0),
-        ]
-        self.uinput_device.send_events(click_events)
-        time.sleep(0.1)
-        release_events = [
             libevdev.InputEvent(libevdev.EV_KEY.BTN_LEFT, value=0),
             libevdev.InputEvent(libevdev.EV_SYN.SYN_REPORT, value=0),
         ]
-        self.uinput_device.send_events(release_events)
+        self.uinput_device.send_events(events)
 
     def close(self):
         if self.uinput_device:
