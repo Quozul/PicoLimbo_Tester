@@ -8,6 +8,8 @@ RUN apt-get update && apt-get install -y \
     libegl1 \
     libgl1 \
     libgl1-mesa-dri \
+    xserver-xorg-core \
+    xserver-xorg-video-dummy \
     novnc \
     openbox \
     python3 \
@@ -15,15 +17,20 @@ RUN apt-get update && apt-get install -y \
     scrot \
     websockify \
     x11-utils \
+    x11-xserver-utils \
     x11vnc \
     xdotool \
     xvfb \
     && rm -rf /var/lib/apt/lists/*
 
+COPY xorg.conf /etc/X11/xorg.conf
+
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:$PATH"
 
 WORKDIR /app
+
+COPY references ./references
 
 COPY pyproject.toml uv.lock ./
 RUN uv sync --no-dev

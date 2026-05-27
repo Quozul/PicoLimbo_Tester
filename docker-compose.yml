@@ -14,3 +14,4 @@ services:
     build: .
     depends_on:
       - picolimbo
+    privileged: true

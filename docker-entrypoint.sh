@@ -1,20 +1,33 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Start a virtual X display at a resolution large enough to house the 854x480
-# Minecraft window with room for a window manager title bar.
-Xvfb :1 -screen 0 854x480x24 -ac &
-XVFB_PID=$!
+# Start a real Xorg server using the dummy video driver.
+# This provides a real XRandR display mode list, fixing LWJGL 2 crashes.
+Xorg :1 -config /etc/X11/xorg.conf -noreset -logfile /dev/stdout &
+X_PID=$!
 
 export DISPLAY=:1
 
+# Disable X access control so that tools like x11vnc and xdotool can connect.
+# We wait a bit for Xorg to initialize first.
+sleep 2
+xhost + >/dev/null 2>&1 || true
+
 # Wait until the X server accepts connections.
-for i in $(seq 1 30); do
-    if xdpyinfo -display :1 >/dev/null 2>&1; then
-        break
+MAX_RETRIES=30
+COUNT=0
+while ! xdpyinfo -display :1 >/dev/null 2>&1; do
+    if [ $COUNT -ge $MAX_RETRIES ]; then
+        echo "❌ Xorg failed to start or become available after $MAX_RETRIES seconds."
+        kill $X_PID 2>/dev/null || true
+        exit 1
     fi
-    sleep 0.5
+    echo "Waiting for Xorg to start..."
+    sleep 1
+    COUNT=$((COUNT + 1))
 done
+
+echo "✅ Xorg is running."
 
 # Start a minimal window manager so that windows actually get positioned and
 # painted. Openbox is extremely lightweight and sufficient for headless use.

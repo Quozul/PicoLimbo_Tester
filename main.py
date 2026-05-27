@@ -22,6 +22,16 @@ _QUIT_REGION_NEWER = (430, 384, 196, 40)
 _QUIT_REGION_OLDER = (430, 384, 196, 40)
 
 
+def _is_lwjgl2_version(version: str) -> bool:
+    """LWJGL 2 is used by Minecraft 1.7–1.12; it crashes in fullscreen under Xvfb
+    because XRandR returns an empty display-mode list."""
+    try:
+        major, minor = (int(x) for x in version.split(".")[:2])
+        return (major, minor) <= (1, 12)
+    except ValueError:
+        return False
+
+
 def _is_wayland() -> bool:
     return bool(os.environ.get("WAYLAND_DISPLAY"))
 
@@ -89,38 +99,61 @@ def click_in_minecraft_window(
     time.sleep(0.1)
 
 
+def patch_options_fullscreen(game_dir: str, fullscreen: bool) -> None:
+    options_path = os.path.join(game_dir, "options.txt")
+    if not os.path.exists(options_path):
+        return
+    with open(options_path) as f:
+        content = f.read()
+    value = "true" if fullscreen else "false"
+    patched = re.sub(r"fullscreen:(true|false)", f"fullscreen:{value}", content)
+    if patched == content and f"fullscreen:{value}" not in content:
+        patched = content.rstrip("\n") + f"\nfullscreen:{value}\n"
+    with open(options_path, "w") as f:
+        f.write(patched)
+
+
 def wait_for_game(version: str) -> str:
     """Wait for Minecraft to load to the main menu and return the window ID."""
     window_id = None
+    window_info = None
     deadline = time.time() + 120
+
+    # Keep searching until we find a window whose geometry we can actually read.
+    # Older versions (LWJGL 2) create transient splash/init windows that disappear
+    # before xdotool can query them, so we need the check inside the loop.
     while time.time() < deadline:
-        window_id = get_minecraft_window()
-        if window_id:
-            break
+        wid = get_minecraft_window()
+        if wid:
+            info = get_window_info(wid)
+            if info:
+                window_id = wid
+                window_info = info
+                break
         time.sleep(1)
 
-    if not window_id:
-        raise Exception(f"Could not find a window for {version}")
+    if not window_id or not window_info:
+        raise Exception(f"Could not find a stable window for {version}")
 
-    window_info = get_window_info(window_id)
-    if not window_info:
-        raise Exception(f"Could not get window geometry for {version}")
+    # LWJGL 2 versions run windowed (fullscreen is disabled to avoid an XRandR
+    # crash). Move the window to (0,0) so that window-relative coordinates
+    # equal absolute screen coordinates, matching the behaviour of fullscreen mode.
+    if _is_lwjgl2_version(version):
+        subprocess.run(
+            ["xdotool", "windowmove", window_id, "0", "0"], capture_output=True
+        )
+        time.sleep(0.3)
+        refreshed = get_window_info(window_id)
+        if refreshed:
+            window_info = refreshed
 
-    if (
-        version.startswith("1.12")
-        or version.startswith("1.11")
-        or version.startswith("1.10")
-        or version.startswith("1.9")
-        or version.startswith("1.8")
-        or version.startswith("1.7")
-    ):
-        rel_x, rel_y, rel_w, rel_h = _QUIT_REGION_OLDER
-    else:
-        rel_x, rel_y, rel_w, rel_h = _QUIT_REGION_NEWER
+    rel_x, rel_y, rel_w, rel_h = (
+        _QUIT_REGION_OLDER if _is_lwjgl2_version(version) else _QUIT_REGION_NEWER
+    )
 
     watch_region = (
-        rel_x,
-        rel_y,
+        window_info["x"] + rel_x,
+        window_info["y"] + rel_y,
         rel_w,
         rel_h,
     )
@@ -155,34 +188,19 @@ def log_to_multiplayer(
     click_in_minecraft_window(virtual_device, 217, 391, window_info)
 
 
-def test_chat_message(process: subprocess.Popen, log_check_timeout: int = 10) -> None:
+def test_chat_message(version: str, log_check_timeout: int = 10) -> None:
     start_time = time.time()
-
-    fd = process.stdout.fileno()
-    flags = fcntl.fcntl(fd, fcntl.F_GETFL)
-    fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
-
-    log_buffer = ""
+    log_path = os.path.join(GAME_DIRECTORY, "logs", "latest.log")
 
     while time.time() - start_time < log_check_timeout:
-        if process.poll() is not None:
-            print("Minecraft process terminated unexpectedly.")
-            break
+        if os.path.exists(log_path):
+            with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+                if "Welcome to PicoLimbo!" in content:
+                    return
+        time.sleep(0.5)
 
-        try:
-            chunk = process.stdout.read()
-            if chunk:
-                log_buffer += chunk
-                while "\n" in log_buffer:
-                    line, log_buffer = log_buffer.split("\n", 1)
-                    if "Welcome to PicoLimbo!" in line:
-                        return
-        except (IOError, TypeError):
-            pass
-
-        time.sleep(0.1)
-
-    raise Exception("Integration test FAILED: welcome message not received.")
+    raise Exception("Integration test FAILED: welcome message not received in logs.")
 
 
 def start_minecraft(version: str) -> subprocess.Popen:
@@ -190,6 +208,11 @@ def start_minecraft(version: str) -> subprocess.Popen:
     minecraft_launcher_lib.install.install_minecraft_version(
         version, minecraft_directory
     )
+
+    # LWJGL 2 (1.7–1.12) crashes when starting fullscreen under Xvfb because
+    # XRandR returns an empty display-mode list. Disable fullscreen for those
+    # versions; wait_for_game will move the window to (0,0) to compensate.
+    patch_options_fullscreen(GAME_DIRECTORY, fullscreen=not _is_lwjgl2_version(version))
 
     options = minecraft_launcher_lib.utils.generate_test_options()
     options["jvmArguments"] = ["-Xmx2G", "-Xms2G"]
@@ -204,8 +227,8 @@ def start_minecraft(version: str) -> subprocess.Popen:
     return subprocess.Popen(
         minecraft_command,
         cwd=minecraft_directory,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stdout=None,
+        stderr=None,
         text=True,
         encoding="utf-8",
         errors="ignore",
@@ -265,7 +288,7 @@ def test_single_version(version: str, virtual_device: VirtualInputController) ->
         window_id = wait_for_game(version)
         virtual_device.set_window(window_id)
         log_to_multiplayer(version, virtual_device, window_id)
-        test_chat_message(process, log_check_timeout=15)
+        test_chat_message(version, log_check_timeout=15)
         time.sleep(2)
         test_screenshot(version, virtual_device)
         print(f"✅ Test PASSED for version: {version}")

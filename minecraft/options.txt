@@ -15,7 +15,7 @@ glintSpeed:0.5
 glintStrength:0.75
 graphicsPreset:"custom"
 prioritizeChunkUpdates:0
-fullscreen:true
+fullscreen:false
 exclusiveFullscreen:false
 gamma:0.0
 guiScale:0
