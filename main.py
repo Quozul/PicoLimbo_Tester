@@ -99,20 +99,6 @@ def click_in_minecraft_window(
     time.sleep(0.1)
 
 
-def patch_options_fullscreen(game_dir: str, fullscreen: bool) -> None:
-    options_path = os.path.join(game_dir, "options.txt")
-    if not os.path.exists(options_path):
-        return
-    with open(options_path) as f:
-        content = f.read()
-    value = "true" if fullscreen else "false"
-    patched = re.sub(r"fullscreen:(true|false)", f"fullscreen:{value}", content)
-    if patched == content and f"fullscreen:{value}" not in content:
-        patched = content.rstrip("\n") + f"\nfullscreen:{value}\n"
-    with open(options_path, "w") as f:
-        f.write(patched)
-
-
 def wait_for_game(version: str) -> str:
     """Wait for Minecraft to load to the main menu and return the window ID."""
     window_id = None
@@ -135,9 +121,9 @@ def wait_for_game(version: str) -> str:
     if not window_id or not window_info:
         raise Exception(f"Could not find a stable window for {version}")
 
-    # LWJGL 2 versions run windowed (fullscreen is disabled to avoid an XRandR
-    # crash). Move the window to (0,0) so that window-relative coordinates
-    # equal absolute screen coordinates, matching the behaviour of fullscreen mode.
+    # LWJGL 2 versions are run windowed to avoid XRandR crashes.
+    # Move the window to (0,0) so that window-relative coordinates
+    # equal absolute screen coordinates.
     if _is_lwjgl2_version(version):
         subprocess.run(
             ["xdotool", "windowmove", window_id, "0", "0"], capture_output=True
@@ -209,16 +195,11 @@ def start_minecraft(version: str) -> subprocess.Popen:
         version, minecraft_directory
     )
 
-    # LWJGL 2 (1.7–1.12) crashes when starting fullscreen under Xvfb because
-    # XRandR returns an empty display-mode list. Disable fullscreen for those
-    # versions; wait_for_game will move the window to (0,0) to compensate.
-    patch_options_fullscreen(GAME_DIRECTORY, fullscreen=not _is_lwjgl2_version(version))
-
     options = minecraft_launcher_lib.utils.generate_test_options()
     options["jvmArguments"] = ["-Xmx2G", "-Xms2G"]
     options["customResolution"] = True
-    options["resolutionWidth"] = "854"
-    options["resolutionHeight"] = "480"
+    options["resolutionWidth"] = "1024"
+    options["resolutionHeight"] = "768"
     options["gameDirectory"] = GAME_DIRECTORY
     minecraft_command = minecraft_launcher_lib.command.get_minecraft_command(
         version, minecraft_directory, options
@@ -443,7 +424,7 @@ def get_versions_to_test(config_set="all"):
 
 if __name__ == "__main__":
     # versions_to_run = get_versions_to_test("all")
-    versions_to_run = ["1.9"]
+    versions_to_run = ["1.13"]
     failed_tests = run_test_suite(versions_to_run)
     if failed_tests:
         import sys
