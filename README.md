@@ -32,3 +32,10 @@ If one new version has a new quit button texture or if the resolution of the gam
 ```shell
 docker compose run --build --rm pico-tests python3 update_references.py
 ```
+
+# Minimal `options.txt`
+
+```
+skipMultiplayerWarning:true
+tutorialStep:none
+```
