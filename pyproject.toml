@@ -8,4 +8,10 @@ dependencies = [
     "minecraft-launcher-lib>=8.0",
     "pillow>=12.2.0",
     "pyscreenshot>=3.1",
+    "nbtlib>=2.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
 ]

@@ -1,3 +1,11 @@
+This project is intended to be used to test all versions of Minecraft agaisn't a custom minecraft server (PicoLimbo).
+It does that by starting the game inside a container using a virtual desktop (Xorg) and then perform a few steps:
+1. Launch the game in one version
+2. Wait for the quit button to become visible (this is the most reliable way I found to test if the game is fully launched)
+3. Click on "Multiplayer" button, then on the server's list entry and finally on "Join Server"
+4. It then waits a little (30 seconds) to ensure the player has spawned in the world
+5. Finally, it takes a screenshot and saves it to a volume outside the container.
+
 Start the tests using Docker compose:
 
 ```shell
@@ -35,7 +43,8 @@ docker compose run --build --rm pico-tests python3 update_references.py
 
 # Minimal `options.txt`
 
-```
-skipMultiplayerWarning:true
-tutorialStep:none
+The minimal options to start the game without burden:
+```yaml
+skipMultiplayerWarning:true # added in 1.15.2
+tutorialStep:none           # added in 1.12
 ```

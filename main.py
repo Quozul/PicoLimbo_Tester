@@ -8,7 +8,8 @@ import time
 
 import minecraft_launcher_lib
 
-from minecraft_env import create_server_dat
+from minecraft_env import create_servers_dat, create_options_txt
+from versions import Version
 from virtual_devices import VirtualInputController
 from wait_for_quit_button import wait_for_screen_region
 
@@ -280,12 +281,13 @@ def test_single_version(version: str, virtual_device: VirtualInputController) ->
         # likewise, if the server doesn't send keep alive, the client can drop the connection
         # so for now, we emulate this keep alive test with a 30 seconds timeout
         # one issue with this timeout is that if the client takes 20 seconds to log-in, we may not be kicked for timeout (not responding to play state keep alive)
-        time.sleep(30)
+        # time.sleep(30)
         # since we are testing PicoLimbo, I'm not entirely sure if I want to rely on it too much for the tests, it'd be better to find something truly autonomous
         # right now, what happens is that we take a screenshot from the game, then a human manually reviews all screenshots to ensure, first that,
         # - a screenshot is taken for all tested versions,
         # - screenshot shows what we expect to see
         # unfortunately, a screenshot does not shows us if a title, action bar message and chat message has been sent, since they disappear from the screen after a while
+        # FIXME: for some reasons, it now refuses to take a screenshot
         test_screenshot(version, virtual_device)
         print(f"✅ Test PASSED for version: {version}")
         return True
@@ -306,7 +308,7 @@ def test_single_version(version: str, virtual_device: VirtualInputController) ->
                 process.kill()
 
 
-def run_test_suite(versions_to_test: list[str]) -> list[str]:
+def run_test_suite(versions_to_test: list[str], server_address: str) -> list[str]:
     print("=========================================")
     print("  STARTING MINECRAFT INTEGRATION SUITE   ")
     print("=========================================\n")
@@ -319,6 +321,10 @@ def run_test_suite(versions_to_test: list[str]) -> list[str]:
     virtual_device = VirtualInputController()
 
     for version in versions_to_test:
+        version_instance = Version(version)
+        create_servers_dat(f"{GAME_DIRECTORY}/servers.dat", server_address)
+        create_options_txt(version_instance, f"{GAME_DIRECTORY}/options.txt")
+
         if test_single_version(version, virtual_device):
             passed_versions.append(version)
         else:
@@ -344,104 +350,20 @@ def run_test_suite(versions_to_test: list[str]) -> list[str]:
     return failed_versions
 
 
-def get_versions_to_test(config_set="all"):
-    all_versions = [
-        "26.1",
-        "1.21.11",
-        "1.21.9",
-        "1.21.7",
-        "1.21.6",
-        "1.21.5",
-        "1.21.4",
-        "1.21.2",
-        "1.21",
-        "1.20.5",
-        "1.20.3",
-        "1.20.2",
-        "1.20",
-        "1.19.4",
-        "1.19.3",
-        "1.19.1",  # Multiplayer does not work in offline mode through Velocity
-        "1.19",  # Multiplayer does not work in offline mode through Velocity
-        "1.18.2",
-        "1.18",
-        "1.17.1",
-        "1.17",
-        # "1.16.4",  # Multiplayer does not work in offline mode in this version
-        "1.16.3",
-        "1.16.2",
-        "1.16.1",
-        "1.16",
-        "1.15.2",
-        "1.15.1",
-        "1.15",
-        "1.14.4",
-        "1.14.3",
-        "1.14.2",
-        "1.14.1",
-        "1.14",
-        "1.13.2",
-        "1.13.1",
-        "1.13",
-        "1.12.2",
-        "1.12.1",
-        "1.12",
-        "1.11.1",
-        "1.11",
-        "1.10",
-        "1.9.3",
-        "1.9.2",
-        "1.9.1",
-        "1.9",
-        "1.8",
-        "1.7.6",
-        "1.7.2",
-    ]
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--server-address", default="picolimbo:25565")
 
-    def version_to_tuple(v):
-        return tuple(map(int, v.split(".")))
+    args = parser.parse_args()
+    server_address = args.server_address.lower()
 
-    def filter_since(versions, min_version):
-        min_tuple = version_to_tuple(min_version)
-        return [v for v in versions if version_to_tuple(v) >= min_tuple]
-
-    version_sets = {
-        "configuration": filter_since(all_versions, "1.20.2"),
-        "registries": filter_since(all_versions, "1.16"),
-        "modern": filter_since(all_versions, "1.13"),
-        "legacy": filter_since(all_versions, "1.7.2"),
-        "all": all_versions,
-    }
-
-    if isinstance(config_set, str):
-        if config_set not in version_sets:
-            raise ValueError(
-                f"Unknown config set: {config_set}. Available: {list(version_sets.keys())}"
-            )
-        return version_sets[config_set]
-
-    if isinstance(config_set, list):
-        combined = []
-        seen = set()
-        for set_name in config_set:
-            if set_name not in version_sets:
-                raise ValueError(
-                    f"Unknown config set: {set_name}. Available: {list(version_sets.keys())}"
-                )
-            for v in version_sets[set_name]:
-                if v not in seen:
-                    combined.append(v)
-                    seen.add(v)
-        return combined
-
-    raise TypeError("config_set must be a string or list of strings")
-
-
-if __name__ == "__main__":
-    # versions_to_run = get_versions_to_test("all")
     versions_to_run = ["26.1"]
-    failed_tests = run_test_suite(versions_to_run)
+    failed_tests = run_test_suite(versions_to_run, server_address)
     if failed_tests:
         import sys
 
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

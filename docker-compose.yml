@@ -10,7 +10,6 @@ services:
       - "6080:6080" # webvnc server: http://localhost:6080/vnc.html
     volumes:
       - ./integration_tests_reports:/app/integration_tests_reports
-      - ./minecraft:/app/minecraft
       - ./full_screenshots:/app/full_screenshots
     build: .
     depends_on:
