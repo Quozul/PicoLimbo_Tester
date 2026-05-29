@@ -43,4 +43,7 @@ websockify --web /usr/share/novnc/ 6080 localhost:5900 >/dev/null 2>&1 &
 echo "Started VNC server on http://localhost:6080/vnc.html"
 
 # Run the integration tests, forwarding any extra arguments.
-exec uv run python main.py "$@"
+if [ $# -eq 0 ]; then
+    set -- python main.py
+fi
+exec uv run "$@"

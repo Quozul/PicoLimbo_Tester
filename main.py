@@ -14,12 +14,10 @@ from wait_for_quit_button import wait_for_screen_region
 GAME_DIRECTORY = str(pathlib.Path().resolve().joinpath("minecraft"))
 REPORTS_DIRECTORY = "integration_tests_reports"
 
-# Relative position of the "Quit Game" button within the 854x480 game window.
-# Computed from the absolute watch-region coordinates that were calibrated on a
-# 2560x1440 Wayland display where the window was centered.
-# Newer versions (>= 1.13) have a slightly different menu layout than older ones.
-_QUIT_REGION_NEWER = (430, 384, 196, 40)
-_QUIT_REGION_OLDER = (430, 384, 196, 40)
+# Relative position of the "Quit Game" button within the 1024x768 game window.
+# Computed for the new standard resolution.
+_QUIT_REGION_NEWER = (519, 588, 294, 60)
+_QUIT_REGION_OLDER = (517, 602, 294, 60)
 
 
 def _is_lwjgl2_version(version: str) -> bool:
@@ -129,25 +127,24 @@ def wait_for_game(version: str) -> str:
             ["xdotool", "windowmove", window_id, "0", "0"], capture_output=True
         )
         time.sleep(0.3)
-        refreshed = get_window_info(window_id)
-        if refreshed:
-            window_info = refreshed
+        # refreshed = get_window_info(window_id)
+        # TODO: Maybe wait and ensure that the window has moved?
 
-    rel_x, rel_y, rel_w, rel_h = (
+    absolute_x, absolute_y, width, height = (
         _QUIT_REGION_OLDER if _is_lwjgl2_version(version) else _QUIT_REGION_NEWER
     )
 
     watch_region = (
-        window_info["x"] + rel_x,
-        window_info["y"] + rel_y,
-        rel_w,
-        rel_h,
+        absolute_x,
+        absolute_y,
+        width,
+        height,
     )
 
     matched = wait_for_screen_region(
         reference_images_dir="references",
         region=watch_region,
-        timeout=120.0,
+        timeout=15.0,
         interval=0.5,
     )
     if not matched:
@@ -166,12 +163,16 @@ def log_to_multiplayer(
     print("window info=", window_info)
 
     virtual_device._activate()
-    click_in_minecraft_window(virtual_device, 426, 283, window_info)
+    # Click on "Multiplayer" button
+    click_in_minecraft_window(virtual_device, 507, 438, window_info)
+    # Click on server's button
     if version.startswith("1.7."):
-        click_in_minecraft_window(virtual_device, 425, 171, window_info)
+        # TODO: These coordinates are probably incorrect for 1.7.x
+        click_in_minecraft_window(virtual_device, 507, 146, window_info)
     else:
-        click_in_minecraft_window(virtual_device, 426, 103, window_info)
-    click_in_minecraft_window(virtual_device, 217, 391, window_info)
+        click_in_minecraft_window(virtual_device, 507, 146, window_info)
+    # Click on "Join Server" button
+    click_in_minecraft_window(virtual_device, 201, 630, window_info)
 
 
 def test_chat_message(version: str, log_check_timeout: int = 10) -> None:
@@ -424,7 +425,7 @@ def get_versions_to_test(config_set="all"):
 
 if __name__ == "__main__":
     # versions_to_run = get_versions_to_test("all")
-    versions_to_run = ["1.13"]
+    versions_to_run = ["1.21.8"]
     failed_tests = run_test_suite(versions_to_run)
     if failed_tests:
         import sys

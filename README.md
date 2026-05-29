@@ -24,3 +24,11 @@ Here is a list of improvements I want to make to this tool:
     - A small custom plugin to hold the player in the configuration state for longer than usual (tests the keep alive)  
       These plugins, when installed on the proxy are known for causing issues with PicoLimbo.
 - Keep the player connected for at least 30 seconds to ensure they don't get kicked out from the server
+
+# How to update references
+
+If one new version has a new quit button texture or if the resolution of the game window changes, it is necessary to update the references images to detect properly the quit button.
+
+```shell
+docker compose run --build --rm pico-tests python3 update_references.py
+```
