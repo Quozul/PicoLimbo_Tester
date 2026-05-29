@@ -217,6 +217,8 @@ def start_minecraft(version: str) -> subprocess.Popen:
 
 
 def empty_directory(directory: str) -> None:
+    if not os.path.exists(directory):
+        return
     for filename in os.listdir(directory):
         file_path = os.path.join(directory, filename)
         try:
@@ -229,6 +231,8 @@ def empty_directory(directory: str) -> None:
 
 
 def get_latest_screenshot(directory: str) -> str:
+    if not os.path.exists(directory):
+        raise FileNotFoundError(f"Screenshot directory {directory} does not exist.")
     files = [
         f for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f))
     ]
