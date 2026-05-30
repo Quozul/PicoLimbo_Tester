@@ -81,11 +81,12 @@ def _update_job(job_id: str, **fields) -> dict:
     return job
 
 
-def _build_step(job: dict) -> tuple[bool, Optional[str]]:
+def _build_step(job: dict) -> tuple[bool, str]:
     """Execute the build step.
 
-    Returns (skipped, artifact_path_or_error).
+    Returns (skipped, artifact_path).
     - skipped=True means artifact already existed, no build needed.
+    - artifact_path is always set (either reused or newly built).
     """
     job_id = job["job_id"]
     owner = job["owner"]
@@ -94,16 +95,18 @@ def _build_step(job: dict) -> tuple[bool, Optional[str]]:
     commit_hash = job["commit_hash"]
 
     repo_path = engine.ensure_repo_cloned(owner, repo_name)
+    # Update repo if already cloned (fetch latest)
+    engine.update_repo(repo_path, ref)
     # Re-resolve commit in case it changed (branch moved)
     commit_hash = engine.resolve_commit(repo_path, ref)
     database.update_job(job_id, commit_hash=commit_hash)
 
-    # Check if artifact already exists
+    # Check if artifact already exists for this commit hash
     artifact_dir = engine.BUILDS_DIR / owner / ref / commit_hash
     artifact_path = artifact_dir / "pico_limbo"
     if artifact_path.exists():
         logger.info("Job %s: artifact already exists, skipping build", job_id)
-        return True, None
+        return True, str(artifact_path)
 
     artifact_path_str = engine.build_project(repo_path, commit_hash, owner, ref)
     return False, artifact_path_str
@@ -119,9 +122,8 @@ def _server_step(job: dict, versions: list[str]) -> Optional[subprocess.Popen]:
     if not artifact_path:
         raise RuntimeError("No artifact path for job")
 
-    # Check if all versions already tested
-    test_results = job.get("test_results") or {}
-    tested_versions = set(test_results.keys())
+    # Check if all versions already tested (globally, across all jobs with same commit)
+    tested_versions = database.get_tested_versions_for_commit(job["commit_hash"])
     remaining = [v for v in versions if v not in tested_versions]
     if not remaining:
         logger.info("Job %s: all versions already tested, skipping server start", job_id)
@@ -168,10 +170,19 @@ def _server_step(job: dict, versions: list[str]) -> Optional[subprocess.Popen]:
 def _test_step(job: dict, versions: list[str], server_proc: Optional[subprocess.Popen]) -> dict:
     """Run Minecraft tests for all versions.
 
+    Skips versions already tested across all jobs with the same commit hash.
+    For skipped versions, reuses screenshots from previous completed jobs.
     Returns updated test_results dict.
     """
     job_id = job["job_id"]
+    commit_hash = job["commit_hash"]
     test_results = dict(job.get("test_results") or {})
+
+    # Get all versions already tested for this commit hash (globally)
+    globally_tested = database.get_tested_versions_for_commit(commit_hash)
+
+    # Get the latest completed job's test results for screenshot lookups
+    previous_results = database.get_latest_test_results_for_commit(commit_hash)
 
     # Ensure screenshots directory exists
     os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
@@ -183,12 +194,28 @@ def _test_step(job: dict, versions: list[str], server_proc: Optional[subprocess.
 
     try:
         for version in versions:
-            if version in test_results:
-                logger.info("Job %s: version %s already tested, skipping", job_id, version)
+            if version in globally_tested:
+                logger.info("Job %s: version %s already tested for commit %s, skipping", job_id, version, commit_hash[:8])
+                # Look up screenshot from the previous completed job's test results
+                screenshot_path = None
+                if previous_results and version in previous_results:
+                    screenshot_path = previous_results[version].get("screenshot_path")
+                test_results[version] = {
+                    "version": version,
+                    "passed": True,
+                    "screenshot_path": screenshot_path,
+                    "duration_seconds": None,
+                    "error": None,
+                }
+                # Persist after each version so we don't lose progress
+                database.update_job(
+                    job_id,
+                    test_results=json.dumps(test_results),
+                )
                 continue
 
             logger.info("Job %s: testing version %s", job_id, version)
-            result = test_single_version(version, virtual_device, SCREENSHOTS_DIR)
+            result = test_single_version(version, commit_hash, virtual_device, SCREENSHOTS_DIR)
             test_results[version] = result
 
             # Persist after each version so we don't lose progress
@@ -196,6 +223,8 @@ def _test_step(job: dict, versions: list[str], server_proc: Optional[subprocess.
                 job_id,
                 test_results=json.dumps(test_results),
             )
+            # Update our local set so we don't re-test in this job either
+            globally_tested.add(version)
 
     finally:
         virtual_device.close()
@@ -234,23 +263,17 @@ def run_job(job_id: str) -> None:
     try:
         # --- Build step ---
         _update_job(job_id, status="building", current_step="building")
-        skipped, artifact_path_or_error = _build_step(job)
-        if artifact_path_or_error:
-            # Build succeeded (or skipped)
-            _update_job(
-                job_id,
-                status="testing",
-                current_step="testing",
-                artifact_path=artifact_path_or_error,
-            )
+        skipped, artifact_path = _build_step(job)
+        if skipped:
+            logger.info("Job %s: build skipped (artifact already exists)", job_id)
         else:
-            # Artifact already existed
-            _update_job(
-                job_id,
-                status="testing",
-                current_step="testing",
-                artifact_path=job.get("artifact_path"),
-            )
+            logger.info("Job %s: build completed", job_id)
+        _update_job(
+            job_id,
+            status="testing",
+            current_step="testing",
+            artifact_path=artifact_path,
+        )
 
         # --- Server step ---
         # Re-fetch job in case artifact_path was just set

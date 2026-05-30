@@ -43,7 +43,7 @@ class JobInfo(BaseModel):
     commit_hash: str
     current_step: Optional[str] = None
     versions: list[str] = []
-    test_results: list[TestResult] = []
+    test_results: dict[str, TestResult] = {}
     artifact_path: Optional[str] = None
     error_message: Optional[str] = None
     eta_seconds: Optional[int] = None

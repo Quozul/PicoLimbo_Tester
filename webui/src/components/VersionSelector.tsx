@@ -106,7 +106,7 @@ export function VersionSelector({ selected, onChange }: VersionSelectorProps) {
       </div>
 
       {/* Version Groups */}
-      <div className="flex flex-col gap-1 max-h-[320px] overflow-y-auto pr-1 scrollbar-thin">
+      <div className="flex flex-col gap-1 max-h-[320px] overflow-y-auto scrollbar-thin">
         {filteredGroups.map(group => {
           const versions = GROUPED_VERSIONS[group]
           const groupSelected = versions.filter(v => selected.has(v.label))
@@ -143,7 +143,7 @@ export function VersionSelector({ selected, onChange }: VersionSelectorProps) {
 
               {/* Version chips */}
               {isExpanded && (
-                <div className="flex flex-wrap gap-1 px-2 pb-2">
+                <div className="flex flex-wrap gap-1 px-2 py-2">
                   {versions.map(v => {
                     const isSelected = selected.has(v.label)
                     return (

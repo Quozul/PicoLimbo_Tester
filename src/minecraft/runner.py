@@ -212,7 +212,8 @@ def get_latest_screenshot(directory: str) -> str:
     )
 
 
-def test_screenshot(version: str, virtual_device: VirtualInputController, screenshots_dir: str) -> str:
+def test_screenshot(version: str, commit_hash: str, virtual_device: VirtualInputController,
+                    screenshots_dir: str) -> str:
     screenshot_directory = os.path.join(GAME_DIRECTORY, "screenshots")
     empty_directory(screenshot_directory)
 
@@ -225,7 +226,9 @@ def test_screenshot(version: str, virtual_device: VirtualInputController, screen
 
     latest_screenshot = get_latest_screenshot(screenshot_directory)
     basename = os.path.basename(latest_screenshot)
-    dest_path = os.path.join(screenshots_dir, f"{version}_{basename}")
+    # Include commit hash in the filename so screenshots from different commits don't collide
+    commit_short = commit_hash[:8]
+    dest_path = os.path.join(screenshots_dir, f"{version}_{commit_short}_{basename}")
     shutil.move(
         latest_screenshot,
         dest_path,
@@ -234,7 +237,8 @@ def test_screenshot(version: str, virtual_device: VirtualInputController, screen
     return dest_path
 
 
-def test_single_version(version: str, virtual_device: VirtualInputController, screenshots_dir: str) -> dict:
+def test_single_version(version: str, commit_hash: str, virtual_device: VirtualInputController,
+                        screenshots_dir: str) -> dict:
     """Test a single Minecraft version. Returns a test result dict."""
     logger.info("--- Starting test for version: %s ---", version)
     process = None
@@ -253,7 +257,7 @@ def test_single_version(version: str, virtual_device: VirtualInputController, sc
         virtual_device.set_window(window_id)
         log_to_multiplayer(version, virtual_device, window_id)
         time.sleep(2)  # wait for the player to be logged in
-        screenshot_path = test_screenshot(version, virtual_device, screenshots_dir)
+        screenshot_path = test_screenshot(version, commit_hash, virtual_device, screenshots_dir)
         result["passed"] = True
         result["screenshot_path"] = screenshot_path
         logger.info("✅ Test PASSED for version: %s", version)

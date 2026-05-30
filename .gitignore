@@ -5,4 +5,4 @@ __pycache__/
 *.pyo
 integration_tests_reports/
 /full_screenshots
-/cache/
+/cache

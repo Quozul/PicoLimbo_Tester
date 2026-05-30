@@ -149,7 +149,7 @@ export function App() {
                 {jobs.length} jobs
               </span>
             </div>
-            <div className="flex flex-col gap-1 max-h-[200px] overflow-y-auto pr-1 scrollbar-thin">
+            <div className="flex flex-col gap-1 max-h-[200px] overflow-y-auto scrollbar-thin">
               {loadingJobs ? (
                 <div className="py-4 text-center">
                   <Loader2 className="size-4 animate-spin text-muted-foreground mx-auto" />
@@ -162,9 +162,9 @@ export function App() {
                 jobs.map(job => {
                   const isExpanded = expandedJobs.has(job.job_id)
                   const isLatest = job.job_id === activeJob?.job_id
-                  const testResults = job.test_results || []
-                  const passed = testResults.filter(r => r.passed).length
-                  const failed = testResults.filter(r => !r.passed).length
+                  const testResults = job.test_results || {}
+                  const passed = Object.values(testResults).filter(r => r.passed).length
+                  const failed = Object.values(testResults).filter(r => !r.passed).length
 
                   return (
                     <div

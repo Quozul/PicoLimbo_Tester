@@ -33,19 +33,19 @@ function getTestResultForVersion(
   job: JobInfo,
   versionLabel: string
 ): TestResult | undefined {
-  return job.test_results.find(r => r.version === versionLabel)
+  return job.test_results[versionLabel]
 }
 
 function getOverallProgress(job: JobInfo): number {
   if (job.status === "finished") return 100
   if (job.status === "failed") {
-    const tested = job.test_results.length
+    const tested = Object.keys(job.test_results).length
     const total = job.versions.length
     return total > 0 ? Math.round((tested / total) * 100) : 0
   }
   if (job.versions.length === 0) return 0
 
-  const tested = job.test_results.length
+  const tested = Object.keys(job.test_results).length
   return Math.round((tested / job.versions.length) * 100)
 }
 
@@ -148,7 +148,7 @@ export function JobProgress({ job }: JobProgressProps) {
   }, [currentJob.job_id])
 
   // Determine which versions have been tested
-  const testedVersions = new Set(currentJob.test_results.map(r => r.version))
+  const testedVersions = new Set(Object.keys(currentJob.test_results))
 
   // Build ordered list of versions to display
   const displayVersions = currentJob.versions.length > 0
@@ -195,8 +195,8 @@ export function JobProgress({ job }: JobProgressProps) {
   }, [currentJob.job_id])
 
   const overallProgress = getOverallProgress(currentJob)
-  const passed = currentJob.test_results.filter(r => r.passed).length
-  const failed = currentJob.test_results.filter(r => !r.passed).length
+  const passed = Object.values(currentJob.test_results).filter(r => r.passed).length
+  const failed = Object.values(currentJob.test_results).filter(r => !r.passed).length
   const pending = displayVersions.length - testedVersions.size
 
   return (
@@ -253,7 +253,7 @@ export function JobProgress({ job }: JobProgressProps) {
         <span className="text-muted-foreground">
           ETA: {formatEta(currentJob.eta_seconds)}
         </span>
-        {currentJob.test_results.length > 0 && (
+        {Object.keys(currentJob.test_results).length > 0 && (
           <>
             <span className="flex items-center gap-1 text-green-500">
               <CheckCircle2 className="size-3" />
@@ -283,7 +283,7 @@ export function JobProgress({ job }: JobProgressProps) {
       )}
 
       {/* Version test results */}
-      {currentJob.test_results.length > 0 && (
+      {Object.keys(currentJob.test_results).length > 0 && (
         <div className="flex flex-col gap-0.5">
           {Object.entries(groupedByMajor).map(([group, versions]) => (
             <div key={group} className="border border-border">
@@ -331,7 +331,7 @@ export function JobProgress({ job }: JobProgressProps) {
                     </button>
 
                     {isExpanded && result && (
-                      <div className="px-2 pb-2 pl-5 text-[10px]">
+                      <div className="px-2 py-2 pl-5 text-[10px]">
                         {result.error && (
                           <div className="text-destructive mb-1">{result.error}</div>
                         )}

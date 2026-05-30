@@ -25,7 +25,7 @@ export const JobInfoSchema = z.object({
   commit_hash: z.string(),
   current_step: z.string().nullable().optional(),
   versions: z.array(z.string()),
-  test_results: z.array(TestResultSchema),
+  test_results: z.record(TestResultSchema),
   artifact_path: z.string().nullable().optional(),
   error_message: z.string().nullable().optional(),
   eta_seconds: z.number().nullable().optional(),

@@ -77,6 +77,17 @@ def ensure_repo_cloned(owner: str, repo_name: str) -> Path:
     return repo_path
 
 
+def update_repo(repo_path: Path, ref: str) -> None:
+    """Update an existing repo: fetch latest and checkout the ref."""
+    logger.info("Updating repo at %s (ref=%s)", repo_path, ref)
+    _run(["git", "fetch", "origin"], cwd=repo_path)
+    if is_commit_hash(ref):
+        _run(["git", "checkout", ref], cwd=repo_path)
+    else:
+        _run(["git", "checkout", ref], cwd=repo_path)
+    logger.info("Repo updated at %s", repo_path)
+
+
 def resolve_commit(repo_path: Path, ref: str) -> str:
     """Resolve a ref (branch name or commit hash) to a commit hash.
 
@@ -122,8 +133,13 @@ def build_project(repo_path: Path, commit_hash: str, owner: str, ref: str) -> st
     return str(artifact_path)
 
 
-def create_or_get_job(repo_url: str, ref: str, versions: Optional[list[str]] = None) -> dict:
-    """Create a new job or return existing one (idempotent).
+def create_job(repo_url: str, ref: str, versions: Optional[list[str]] = None) -> dict:
+    """Always create a new job.
+
+    Step-level logic handles skipping/reusing where appropriate:
+    - Repo: updates existing clone instead of re-cloning
+    - Build: reuses artifact if already built for this commit hash
+    - Tests: skips versions already tested for this commit hash
 
     Resolves the commit hash immediately, so the returned job has
     commit_hash set but artifact_path is null until build finishes.
@@ -138,13 +154,7 @@ def create_or_get_job(repo_url: str, ref: str, versions: Optional[list[str]] = N
     # Resolve commit hash
     commit_hash = resolve_commit(repo_path, ref)
 
-    # Idempotency check: if a job for this (repo_url, commit_hash) exists, return it
-    existing = database.get_job_by_key(repo_url, commit_hash)
-    if existing:
-        logger.info("Existing job found for %s@%s: %s", repo_url, commit_hash, existing["job_id"])
-        return existing
-
-    # Create new job
+    # Always create a new job - step-level logic handles skipping
     job = database.create_job(repo_url, ref, owner, commit_hash, versions or [])
     logger.info("Created new job %s for %s@%s", job["job_id"], repo_url, ref)
     return job

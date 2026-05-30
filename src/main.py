@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 
 from . import database
 from .builder import engine, worker
-from .models import JobCreate, JobInfo
+from .models import JobCreate, JobInfo, TestResult
 from .orchestration import job_runner
 
 logging.basicConfig(level=logging.INFO)
@@ -50,11 +50,13 @@ def health_check():
 def create_job(body: JobCreate):
     """Create a new job.
 
-    If a job for the same (repo_url, commit_hash) already exists,
-    returns the existing job (idempotent).
+    Always creates a new job. Step-level logic handles skipping/reusing:
+    - Repo: updates existing clone
+    - Build: reuses artifact if already built for this commit hash
+    - Tests: skips versions already tested for this commit hash
     """
     try:
-        job = engine.create_or_get_job(body.repo_url, body.ref, body.versions)
+        job = engine.create_job(body.repo_url, body.ref, body.versions)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -83,16 +85,16 @@ def get_job(job_id: str):
 
     # Build response
     response = dict(job)
-    response["test_results"] = [
-        {
-            "version": k,
-            "passed": v.get("passed", False),
-            "screenshot_path": v.get("screenshot_path"),
-            "duration_seconds": v.get("duration_seconds"),
-            "error": v.get("error"),
-        }
+    response["test_results"] = {
+        k: TestResult(
+            version=v.get("version", k),
+            passed=v.get("passed", False),
+            screenshot_path=v.get("screenshot_path"),
+            duration_seconds=v.get("duration_seconds"),
+            error=v.get("error"),
+        )
         for k, v in (job.get("test_results") or {}).items()
-    ]
+    }
     response["eta_seconds"] = eta
     return response
 
@@ -198,16 +200,16 @@ def list_jobs(
     for job in jobs:
         eta = job_runner._compute_eta(job)
         response = dict(job)
-        response["test_results"] = [
-            {
-                "version": k,
-                "passed": v.get("passed", False),
-                "screenshot_path": v.get("screenshot_path"),
-                "duration_seconds": v.get("duration_seconds"),
-                "error": v.get("error"),
-            }
+        response["test_results"] = {
+            k: TestResult(
+                version=v.get("version", k),
+                passed=v.get("passed", False),
+                screenshot_path=v.get("screenshot_path"),
+                duration_seconds=v.get("duration_seconds"),
+                error=v.get("error"),
+            )
             for k, v in (job.get("test_results") or {}).items()
-        ]
+        }
         response["eta_seconds"] = eta
         result.append(response)
 

@@ -29,8 +29,7 @@ def _ensure_db() -> None:
                 error_message TEXT,
                 eta_seconds INTEGER,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                UNIQUE(repo_url, commit_hash)
+                updated_at TEXT NOT NULL
             )
         """)
         conn.commit()
@@ -63,7 +62,7 @@ def create_job(
         conn.execute(
             """
             INSERT INTO jobs (job_id, repo_url, ref, owner, commit_hash, status, current_step, versions, test_results, error_message, eta_seconds, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 'queued', NULL, ?, '[]', NULL, NULL, ?, ?)
+            VALUES (?, ?, ?, ?, ?, 'queued', NULL, ?, '{}', NULL, NULL, ?, ?)
             """,
             (job_id, repo_url, ref, owner, commit_hash, json.dumps(versions), now, now),
         )
@@ -82,16 +81,39 @@ def get_job_by_id(job_id: str) -> Optional[dict]:
     return _row_to_dict(row)
 
 
-def get_job_by_key(repo_url: str, commit_hash: str) -> Optional[dict]:
-    """Get an existing job by (repo_url, commit_hash) for idempotency."""
+def get_tested_versions_for_commit(commit_hash: str) -> set[str]:
+    """Get all versions that have been tested across all jobs for a given commit hash."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT test_results FROM jobs WHERE commit_hash = ?",
+            (commit_hash,),
+        ).fetchall()
+    tested: set[str] = set()
+    for row in rows:
+        raw = json.loads(row["test_results"]) if row["test_results"] else None
+        if isinstance(raw, dict):
+            tested.update(raw.keys())
+    return tested
+
+
+def get_latest_test_results_for_commit(commit_hash: str) -> Optional[dict]:
+    """Get the test results from the most recently completed job for a given commit hash.
+
+    Returns a dict mapping version -> result dict, or None if no completed job exists.
+    """
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM jobs WHERE repo_url = ? AND commit_hash = ?",
-            (repo_url, commit_hash),
+            "SELECT test_results FROM jobs "
+            "WHERE commit_hash = ? AND status = 'finished' "
+            "ORDER BY created_at DESC LIMIT 1",
+            (commit_hash,),
         ).fetchone()
     if row is None:
         return None
-    return _row_to_dict(row)
+    raw = json.loads(row["test_results"]) if row["test_results"] else None
+    if not isinstance(raw, dict):
+        return None
+    return raw
 
 
 def update_job(job_id: str, **fields) -> Optional[dict]:
@@ -155,7 +177,7 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
         "artifact_path": row["artifact_path"],
         "current_step": row["current_step"],
         "versions": json.loads(row["versions"]) if row["versions"] else [],
-        "test_results": (json.loads(row["test_results"]) if row["test_results"] else []) or [],
+        "test_results": json.loads(row["test_results"]) if row["test_results"] else {},
         "error_message": row["error_message"],
         "eta_seconds": row["eta_seconds"],
         "created_at": row["created_at"],
