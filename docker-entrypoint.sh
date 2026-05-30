@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Start dbus daemon so Xorg doesn't complain
+mkdir -p /run/dbus
+dbus-daemon --system --fork
+
 # Start a real Xorg server using the dummy video driver.
 # This provides a real XRandR display mode list, fixing LWJGL 2 crashes.
 Xorg :1 -config /etc/X11/xorg.conf -noreset -logfile /dev/stdout &
