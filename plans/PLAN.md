@@ -11,11 +11,14 @@ Transform the PicoLimbo integration test project into a build API that compiles 
 | Aspect | Choice | Rationale |
 |--------|--------|-----------|
 | **Framework** | FastAPI | Automatic OpenAPI docs, Pydantic validation, async support, simple |
-| **Database** | SQLite (embedded) | Standalone container, zero external deps, easy backup |
+| **Database** | SQLite (embedded, WAL mode) | Standalone container, zero external deps, easy backup |
 | **Concurrency** | Single build worker | Simple queue, one build at a time |
 | **Auth** | None (for now) | Internal use, behind Docker networking |
 | **Git whitelist** | GitHub.com only | Restrict to `github.com` URLs |
 | **Owner** | Auto-extracted from URL | Parse `https://github.com/{owner}/{repo}.git` |
+| **Base image** | Ubuntu 26.04 | Latest LTS |
+| **Rust toolchain** | `apt` + `rustup update stable` | Ensures latest stable for edition 2024 |
+| **dbus** | Installed and started in entrypoint | Fixes Xorg warning: `dbus-core: error connecting to system bus` |
 
 ---
 
@@ -73,6 +76,27 @@ Download the built artifact binary.
 - **200 OK**: Binary file with `Content-Disposition: attachment; filename="pico_limbo"`
 - **404 Not Found**: Job doesn't exist, or build hasn't finished yet.
 
+### GET /jobs
+List all jobs, optionally filtered by status.
+
+**Query Params**:
+- `status` (optional): filter by status (`queued`, `building`, `finished`, `failed`)
+- `limit` (optional, default 100): max number of results
+
+**Response (200 OK)**: Array of `JobInfo` objects, sorted newest first.
+
+### POST /jobs/{job_id}/retry
+Retry a failed or finished build by resetting its status to `queued`.
+
+- **200 OK**: Job re-queued, worker picks it up.
+- **400 Bad Request**: Job is `queued` or `building`.
+- **404 Not Found**: Job does not exist.
+
+### GET /health
+Liveness check.
+
+**Response (200 OK)**: `{"status": "ok"}`
+
 ---
 
 ## Idempotency Strategy
@@ -83,6 +107,8 @@ Download the built artifact binary.
    - If `ref` is a branch name → `git fetch` + `git checkout <branch>` → resolve to commit hash
    - If `ref` is a 40-char hex string → `git checkout <hash>` directly
 4. **Build skip**: If artifact already exists at the expected path → mark `finished` immediately.
+5. **SQLite WAL mode**: `PRAGMA journal_mode=WAL` for better concurrency.
+6. **Stuck job recovery**: On startup, jobs stuck in `building` are re-queued (or marked `finished` if artifact exists).
 
 ---
 
@@ -152,15 +178,22 @@ FastAPI application:
 - `POST /jobs` → create job, return JobInfo (201)
 - `GET /jobs/{job_id}` → return JobInfo (404 if missing)
 - `GET /jobs/{job_id}/artifact` → stream binary (404 if not ready)
+- `GET /jobs` → list jobs, optionally filtered by `status` and `limit` (bonus, implemented)
+- `POST /jobs/{job_id}/retry` → reset job status to `queued` for retry (bonus, implemented)
+- `GET /health` → liveness check (bonus, implemented)
 
 ### Step 6: Update `Dockerfile`
-- Add Rust toolchain via `rustup`
+- Base image: `ubuntu:26.04`
+- Install `rustup` via `apt`, then `rustup default stable` + `rustup update stable`
+- Install `dbus` and start daemon in entrypoint
 - Copy new Python files
 - Keep all existing deps (VNC, Xorg, etc.)
 - Keep `EXPOSE 5900 6080` + add `8000`
 
 ### Step 7: Update `docker-entrypoint.sh`
-- After VNC setup, launch: `uvicorn main:app --host 0.0.0.0 --port 8000`
+- Start dbus daemon before Xorg
+- After VNC setup, launch: `uv run uvicorn main:app --host 0.0.0.0 --port 8000`
+- Add `trap` for SIGINT/SIGTERM to kill all background processes (Xorg, openbox, x11vnc, websockify, uvicorn)
 - Keep existing Xorg/VNC/websockify flow unchanged
 
 ### Step 8: Update `docker-compose.yml`
@@ -170,7 +203,7 @@ FastAPI application:
 - Keep existing volumes and ports
 
 ### Step 9: Update `.dockerignore`
-Add `cache/`, `builds/`, `repos/`
+Add `cache/`, `__pycache__/`, `*.pyc`, `*.pyo`, `.git`
 
 ### Step 10: Update `.gitignore`
 Add `cache/`
@@ -179,15 +212,13 @@ Add `cache/`
 
 ## Bonus / Next Steps (Out of Scope for This Phase)
 
-### Queue Persistence & Recovery
-- On container restart, scan the database for jobs with status `queued` or `building`.
-- Re-queue `queued` jobs. For `building` jobs, verify if the artifact exists — if yes, mark `finished`; if no, re-queue as `queued`.
-- Store queue state in SQLite so it survives restarts.
+### ✅ Queue Persistence & Recovery (implemented)
+- On container restart, scan the database for jobs with status `building`.
+- For `building` jobs, verify if the artifact exists — if yes, mark `finished`; if no, re-queue as `queued`.
+- SQLite WAL mode for better concurrency.
 
-### Build Timeout
-- Add a configurable timeout (e.g., 30 minutes) to `cargo build --release`.
-- If the build exceeds the timeout, mark the job as `failed` with an error message.
-- Use `timeout` command or a watchdog thread.
+### ✅ Build Timeout (implemented)
+- 30-minute timeout on `cargo build --release` via `subprocess.run(timeout=1800)`.
 
 ### Artifact Cleanup
 - Implement a retention policy (e.g., keep artifacts for 30 days, or keep only the latest N builds per repo/ref).
@@ -212,9 +243,8 @@ Add `cache/`
 - Simple web UI for browsing jobs, viewing status, and downloading artifacts.
 - Could be a static SPA served by FastAPI, or a separate React/Vue app.
 
-### Health & Metrics
-- `GET /health` — liveness check
-- Prometheus metrics endpoint for build queue length, success/failure rates, etc.
+### ✅ Health Check (implemented)
+- `GET /health` — liveness check, returns `{"status": "ok"}`
 
 ### Fork Detection & Naming
 - Forks of PicoLimbo may have the same repo name but different owners.
@@ -251,11 +281,14 @@ Add `cache/`
 |----------|------|---------|
 | POST /jobs | 201 | Job created |
 | POST /jobs | 400 | Invalid request (e.g., not a GitHub URL) |
-| POST /jobs | 409 | Job already exists for this repo+commit (returns existing job) |
 | GET /jobs/{id} | 200 | Job found |
 | GET /jobs/{id} | 404 | Job not found |
 | GET /jobs/{id}/artifact | 200 | Artifact ready, binary returned |
 | GET /jobs/{id}/artifact | 404 | Job not found or not yet built |
+| GET /jobs | 200 | List of jobs |
+| POST /jobs/{id}/retry | 200 | Job re-queued |
+| POST /jobs/{id}/retry | 400 | Job is `queued` or `building` |
+| POST /jobs/{id}/retry | 404 | Job not found |
 
 ---
 
@@ -265,3 +298,5 @@ Add `cache/`
 - Default repo: `https://github.com/Quozul/PicoLimbo.git`
 - The VNC server (port 5900/6080) and Xorg infrastructure remain in the container for debugging and future features.
 - The existing integration test files are not modified in this phase.
+- Database persisted at `./cache/builds/jobs.db` via the `./cache/builds` volume mount.
+- SQLite uses WAL journal mode for better concurrency.

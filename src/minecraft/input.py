@@ -1,3 +1,5 @@
+"""Virtual input controller for Minecraft automation."""
+
 import subprocess
 import time
 

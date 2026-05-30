@@ -1,4 +1,6 @@
-import argparse
+"""Minecraft integration test runner with logging."""
+
+import logging
 import os
 import pathlib
 import re
@@ -8,10 +10,12 @@ import time
 
 import minecraft_launcher_lib
 
-from minecraft_env import create_servers_dat, create_options_txt
-from versions import Version
-from virtual_devices import VirtualInputController
-from wait_for_quit_button import wait_for_screen_region
+from .env import create_servers_dat, create_options_txt
+from .input import VirtualInputController
+from .wait_for import wait_for_screen_region
+from ..versions import Version
+
+logger = logging.getLogger(__name__)
 
 GAME_DIRECTORY = str(pathlib.Path().resolve().joinpath("minecraft"))
 REPORTS_DIRECTORY = "integration_tests_reports"
@@ -89,7 +93,7 @@ def click_in_minecraft_window(
     absolute_x: int,
     absolute_y: int,
 ):
-    print(f"  clicking at screen ({absolute_x}, {absolute_y})")
+    logger.info("  clicking at screen (%d, %d)", absolute_x, absolute_y)
     mouse.move_to(absolute_x, absolute_y)
     time.sleep(0.1)
     mouse.click()
@@ -126,8 +130,6 @@ def wait_for_game(version: str) -> str:
             ["xdotool", "windowmove", window_id, "0", "0"], capture_output=True
         )
         time.sleep(0.3)
-        # refreshed = get_window_info(window_id)
-        # TODO: Maybe wait and ensure that the window has moved?
 
     absolute_x, absolute_y, width, height = (
         _QUIT_REGION_OLDER if _is_lwjgl2_version(version) else _QUIT_REGION_NEWER
@@ -159,7 +161,7 @@ def log_to_multiplayer(
     if not window_info:
         raise Exception(f"Could not get window geometry for {version}")
 
-    print("window info=", window_info)
+    logger.info("window info=%s", window_info)
 
     virtual_device._activate()
     # Click on "Multiplayer" button
@@ -172,21 +174,6 @@ def log_to_multiplayer(
         click_in_minecraft_window(virtual_device, 507, 146)
     # Click on "Join Server" button
     click_in_minecraft_window(virtual_device, 201, 630)
-
-
-def test_chat_message(version: str, log_check_timeout: int = 10) -> None:
-    start_time = time.time()
-    log_path = os.path.join(GAME_DIRECTORY, "logs", "latest.log")
-
-    while time.time() - start_time < log_check_timeout:
-        if os.path.exists(log_path):
-            with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
-                content = f.read()
-                if "Welcome to PicoLimbo!" in content:
-                    return
-        time.sleep(0.5)
-
-    raise Exception("Integration test FAILED: welcome message not received in logs.")
 
 
 def start_minecraft(version: str) -> subprocess.Popen:
@@ -227,7 +214,7 @@ def empty_directory(directory: str) -> None:
             elif os.path.isdir(file_path):
                 shutil.rmtree(file_path)
         except Exception as e:
-            print(f"Failed to delete {file_path}. Reason: {e}")
+            logger.error("Failed to delete %s. Reason: %s", file_path, e)
 
 
 def get_latest_screenshot(directory: str) -> str:
@@ -244,7 +231,7 @@ def get_latest_screenshot(directory: str) -> str:
     )
 
 
-def test_screenshot(version: str, virtual_device: VirtualInputController) -> None:
+def test_screenshot(version: str, virtual_device: VirtualInputController, screenshots_dir: str) -> str:
     screenshot_directory = os.path.join(GAME_DIRECTORY, "screenshots")
     empty_directory(screenshot_directory)
 
@@ -253,121 +240,59 @@ def test_screenshot(version: str, virtual_device: VirtualInputController) -> Non
     virtual_device.press_f2()
     time.sleep(0.5)
 
-    if not os.path.exists(REPORTS_DIRECTORY):
-        os.makedirs(REPORTS_DIRECTORY)
+    os.makedirs(screenshots_dir, exist_ok=True)
 
     latest_screenshot = get_latest_screenshot(screenshot_directory)
     basename = os.path.basename(latest_screenshot)
+    dest_path = os.path.join(screenshots_dir, f"{version}_{basename}")
     shutil.move(
         latest_screenshot,
-        os.path.join(REPORTS_DIRECTORY, f"{version}_{basename}"),
+        dest_path,
     )
+    logger.info("Saved screenshot to %s", dest_path)
+    return dest_path
 
 
-def test_single_version(version: str, virtual_device: VirtualInputController) -> bool:
-    print(f"--- Starting test for version: {version} ---")
+def test_single_version(version: str, virtual_device: VirtualInputController, screenshots_dir: str) -> dict:
+    """Test a single Minecraft version. Returns a test result dict."""
+    logger.info("--- Starting test for version: %s ---", version)
     process = None
+    start_time = time.time()
+    result = {
+        "version": version,
+        "passed": False,
+        "screenshot_path": None,
+        "duration_seconds": None,
+        "error": None,
+    }
 
     try:
         process = start_minecraft(version)
         window_id = wait_for_game(version)
         virtual_device.set_window(window_id)
         log_to_multiplayer(version, virtual_device, window_id)
-        # the test for chat message does not work anymore, I suppose the latest.log file does not exist anymore given we now run inside of Docker, but I'm not sure
-        # however, I find this test not reliable enough, and it does not cover the most important feature
-        # test_chat_message(version, log_check_timeout=15)
-        time.sleep(2)  # wait for the player to be logged in (hopefully)
-        # in reality, here what I'd like is to wait for PicoLimbo to send a log,
-        # maybe implement some sort of debug feature flag to compile PicoLimbo in a debug mode that implements this king of TCP debug server,
-        # this script will then wait for this log, and resume from there
-        # this log would indicate that the client has sent at least one keep alive packet, and the test can then be flagged as succeeded
-        # a keep alive is usually sent by the server every 15 seconds, the client is expected to reply to it within a certain delay, otherwise, the server can drop the connection
-        # likewise, if the server doesn't send keep alive, the client can drop the connection
-        # so for now, we emulate this keep alive test with a 30 seconds timeout
-        # one issue with this timeout is that if the client takes 20 seconds to log-in, we may not be kicked for timeout (not responding to play state keep alive)
-        # time.sleep(30)
-        # since we are testing PicoLimbo, I'm not entirely sure if I want to rely on it too much for the tests, it'd be better to find something truly autonomous
-        # right now, what happens is that we take a screenshot from the game, then a human manually reviews all screenshots to ensure, first that,
-        # - a screenshot is taken for all tested versions,
-        # - screenshot shows what we expect to see
-        # unfortunately, a screenshot does not shows us if a title, action bar message and chat message has been sent, since they disappear from the screen after a while
-        # FIXME: for some reasons, it now refuses to take a screenshot
-        test_screenshot(version, virtual_device)
-        print(f"✅ Test PASSED for version: {version}")
-        return True
+        time.sleep(2)  # wait for the player to be logged in
+        screenshot_path = test_screenshot(version, virtual_device, screenshots_dir)
+        result["passed"] = True
+        result["screenshot_path"] = screenshot_path
+        logger.info("✅ Test PASSED for version: %s", version)
+        return result
     except Exception as e:
-        print(f"❌ Test FAILED for version: {version}")
-        print(f"   Reason: {e}")
-        return False
+        result["error"] = str(e)
+        logger.error("❌ Test FAILED for version: %s", version)
+        logger.error("   Reason: %s", e)
+        return result
     finally:
         if process:
-            print(f"--- Cleaning up for version: {version} ---")
+            logger.info("--- Cleaning up for version: %s ---", version)
             process.terminate()
             try:
                 process.wait(timeout=10)
             except subprocess.TimeoutExpired:
-                print(
-                    f"   Process for {version} did not terminate gracefully, killing."
+                logger.warning(
+                    "   Process for %s did not terminate gracefully, killing.", version
                 )
                 process.kill()
+        result["duration_seconds"] = round(time.time() - start_time, 1)
 
 
-def run_test_suite(versions_to_test: list[str], server_address: str) -> list[str]:
-    print("=========================================")
-    print("  STARTING MINECRAFT INTEGRATION SUITE   ")
-    print("=========================================\n")
-
-    if os.path.exists(REPORTS_DIRECTORY):
-        empty_directory(REPORTS_DIRECTORY)
-
-    passed_versions = []
-    failed_versions = []
-    virtual_device = VirtualInputController()
-
-    for version in versions_to_test:
-        version_instance = Version(version)
-        create_servers_dat(f"{GAME_DIRECTORY}/servers.dat", server_address)
-        create_options_txt(version_instance, f"{GAME_DIRECTORY}/options.txt")
-
-        if test_single_version(version, virtual_device):
-            passed_versions.append(version)
-        else:
-            failed_versions.append(version)
-        print("\n")
-
-    print("=========================================")
-    print("            TEST SUITE REPORT            ")
-    print("=========================================")
-    print(f"Total tests run: {len(versions_to_test)}")
-    print(f"Passed: {len(passed_versions)}")
-    print(f"Failed: {len(failed_versions)}")
-    print("-----------------------------------------")
-
-    if not failed_versions:
-        print("✅ All versions passed!")
-    else:
-        print("❌ The following versions failed the integration test:")
-        for v in failed_versions:
-            print(f"  - {v}")
-
-    print("=========================================")
-    return failed_versions
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--server-address", default="picolimbo:25565")
-
-    args = parser.parse_args()
-    server_address = args.server_address.lower()
-
-    versions_to_run = ["26.1"]
-    failed_tests = run_test_suite(versions_to_run, server_address)
-    if failed_tests:
-        import sys
-
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()

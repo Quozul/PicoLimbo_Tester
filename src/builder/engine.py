@@ -1,13 +1,13 @@
-"""PicoLimbo build engine with idempotent caching and a single-worker queue."""
+"""PicoLimbo build engine with idempotent caching."""
 
 import logging
 import re
+import shutil
 import subprocess
-import threading
 from pathlib import Path
 from typing import Optional
 
-import database
+from . import database
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +21,6 @@ GITHUB_URL_RE = re.compile(
 
 # Git commit hash: 40-character hex string
 COMMIT_HASH_RE = re.compile(r"^[0-9a-f]{40}$")
-
-# Lock to ensure only one build runs at a time
-_build_lock = threading.Lock()
 
 
 def extract_owner_from_url(repo_url: str) -> tuple[str, str]:
@@ -120,18 +117,19 @@ def build_project(repo_path: Path, commit_hash: str, owner: str, ref: str) -> st
             f"Build artifact not found at {source}. "
             f"Cargo build may have failed silently."
         )
-    import shutil
     shutil.copy2(str(source), str(artifact_path))
     logger.info("Artifact built and copied to %s", artifact_path)
     return str(artifact_path)
 
 
-def create_or_get_job(repo_url: str, ref: str) -> dict:
+def create_or_get_job(repo_url: str, ref: str, versions: Optional[list[str]] = None) -> dict:
     """Create a new job or return existing one (idempotent).
 
     Resolves the commit hash immediately, so the returned job has
     commit_hash set but artifact_path is null until build finishes.
     """
+    import json
+
     owner, repo_name = extract_owner_from_url(repo_url)
 
     # Ensure repo is cloned (or already exists)
@@ -147,19 +145,9 @@ def create_or_get_job(repo_url: str, ref: str) -> dict:
         return existing
 
     # Create new job
-    job = database.create_job(repo_url, ref, owner, commit_hash)
+    job = database.create_job(repo_url, ref, owner, commit_hash, versions or [])
     logger.info("Created new job %s for %s@%s", job["job_id"], repo_url, ref)
     return job
-
-
-def get_job_status(job_id: str) -> Optional[dict]:
-    """Get job status. Returns None if not found."""
-    return database.get_job_by_id(job_id)
-
-
-def get_artifact_path(job: dict) -> Optional[str]:
-    """Get the artifact path from a job dict."""
-    return job.get("artifact_path")
 
 
 def get_artifact_file(job_id: str) -> Optional[Path]:
@@ -168,69 +156,3 @@ def get_artifact_file(job_id: str) -> Optional[Path]:
     if not job or not job.get("artifact_path"):
         return None
     return Path(job["artifact_path"])
-
-
-def _process_queue() -> None:
-    """Background worker: process queued jobs one at a time."""
-    logger.info("Build queue worker started")
-    while True:
-        # Get next queued job
-        jobs = database.get_queued_jobs(limit=1)
-        if not jobs:
-            # No queued jobs, wait a bit
-            threading.Event().wait(2)
-            continue
-
-        job = jobs[0]
-        job_id = job["job_id"]
-
-        # Acquire lock (ensures single build at a time)
-        with _build_lock:
-            # Re-read job to check it's still queued (might have been taken)
-            current = database.get_job_by_id(job_id)
-            if not current or current["status"] != "queued":
-                continue
-
-            logger.info("Processing job %s", job_id)
-            database.update_job(job_id, status="building")
-
-            try:
-                owner = current["owner"]
-                repo_name = current["repo_url"].split("/")[-1].replace(".git", "")
-                ref = current["ref"]
-                commit_hash = current["commit_hash"]
-
-                repo_path = ensure_repo_cloned(owner, repo_name)
-                # Re-resolve commit in case it changed (branch moved)
-                commit_hash = resolve_commit(repo_path, ref)
-                # Update job with latest commit hash
-                database.update_job(job_id, commit_hash=commit_hash)
-
-                artifact_path = build_project(repo_path, commit_hash, owner, ref)
-                database.update_job(job_id, status="finished", artifact_path=artifact_path)
-                logger.info("Job %s finished: %s", job_id, artifact_path)
-
-            except Exception as e:
-                logger.exception("Job %s failed: %s", job_id, e)
-                database.update_job(job_id, status="failed")
-
-
-def recover_stuck_jobs() -> None:
-    """On startup, recover jobs stuck in 'building' state."""
-    building = database.get_building_jobs()
-    for job in building:
-        artifact_path = job.get("artifact_path")
-        if artifact_path and Path(artifact_path).exists():
-            logger.info("Recovering job %s: artifact exists, marking finished", job["job_id"])
-            database.update_job(job["job_id"], status="finished")
-        else:
-            logger.info("Recovering job %s: re-queuing", job["job_id"])
-            database.update_job(job["job_id"], status="queued")
-
-
-def start_queue_worker() -> threading.Thread:
-    """Start the background queue worker thread. Returns the thread."""
-    recover_stuck_jobs()
-    t = threading.Thread(target=_process_queue, daemon=True, name="build-worker")
-    t.start()
-    return t

@@ -1,5 +1,6 @@
 """SQLite database for the PicoLimbo Build API."""
 
+import json
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -22,6 +23,11 @@ def _ensure_db() -> None:
                 commit_hash TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'queued',
                 artifact_path TEXT,
+                current_step TEXT,
+                versions TEXT,
+                test_results TEXT,
+                error_message TEXT,
+                eta_seconds INTEGER,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 UNIQUE(repo_url, commit_hash)
@@ -48,7 +54,7 @@ def _now_iso() -> str:
 
 
 def create_job(
-    repo_url: str, ref: str, owner: str, commit_hash: str
+    repo_url: str, ref: str, owner: str, commit_hash: str, versions: list[str]
 ) -> dict:
     """Create a new job. Raises sqlite3.IntegrityError if duplicate."""
     now = _now_iso()
@@ -56,10 +62,10 @@ def create_job(
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO jobs (job_id, repo_url, ref, owner, commit_hash, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 'queued', ?, ?)
+            INSERT INTO jobs (job_id, repo_url, ref, owner, commit_hash, status, current_step, versions, test_results, error_message, eta_seconds, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'queued', NULL, ?, '{}', NULL, NULL, ?, ?)
             """,
-            (job_id, repo_url, ref, owner, commit_hash, now, now),
+            (job_id, repo_url, ref, owner, commit_hash, json.dumps(versions), now, now),
         )
         conn.commit()
     return get_job_by_id(job_id)
@@ -147,6 +153,11 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
         "owner": row["owner"],
         "commit_hash": row["commit_hash"],
         "artifact_path": row["artifact_path"],
+        "current_step": row["current_step"],
+        "versions": json.loads(row["versions"]) if row["versions"] else [],
+        "test_results": json.loads(row["test_results"]) if row["test_results"] else {},
+        "error_message": row["error_message"],
+        "eta_seconds": row["eta_seconds"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }

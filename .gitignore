@@ -1,6 +1,8 @@
 .idea/
 __pycache__/
+.venv/
+*.pyc
+*.pyo
 integration_tests_reports/
 /full_screenshots
 /cache/
-*.pyc

@@ -52,7 +52,8 @@ echo "Started VNC server on http://localhost:6080/vnc.html"
 
 # Start the PicoLimbo Build API
 echo "Starting PicoLimbo Build API on port 8000..."
-uv run uvicorn main:app --host 0.0.0.0 --port 8000 --log-level info &
+export PYTHONPATH="/app/src:/app"
+uv run uvicorn src.main:app --host 0.0.0.0 --port 8000 --log-level info &
 API_PID=$!
 
 echo "PicoLimbo Build API is running on http://localhost:8000"

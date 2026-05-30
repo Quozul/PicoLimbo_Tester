@@ -1,10 +1,11 @@
-import argparse
+"""Minecraft environment setup: servers.dat and options.txt generation."""
+
 import logging
 import os
 from typing import List
 
 from nbtlib import File, List as NbtList, Compound, String, Byte
-from versions import Version
+from ..versions import Version
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ def create_options_txt(version: Version, output_file_path: str) -> None:
 
 def create_servers_dat(
     output_file_path: str,
-    server_address: str,
+    server_address: str = "127.0.0.1:25565",
     server_name: str = "Minecraft Server",
     hidden: bool = False,
 ) -> None:
@@ -51,7 +52,7 @@ def create_servers_dat(
     Create a servers.dat NBT file containing a single server entry.
 
     :param output_file_path: Path to write the servers.dat file.
-    :param server_address: The server address (e.g. "localhost:25565").
+    :param server_address: The server address (e.g. "127.0.0.1:25565").
     :param server_name: The display name for the server.
     :param hidden: Whether the server should be hidden.
     """
@@ -81,25 +82,3 @@ def create_servers_dat(
     nbt_file.save(output_file_path)
 
     logger.debug("Wrote servers.dat to %s", output_file_path)
-
-
-def _main() -> None:
-    logging.basicConfig(level=logging.DEBUG)
-    parser = argparse.ArgumentParser(description="Minecraft Environment Tool")
-    parser.add_argument(
-        "--version", required=True, help="Minecraft version (e.g. 1.16.5)"
-    )
-
-    args = parser.parse_args()
-    version = Version(args.version)
-
-    logger.debug(
-        "Resolved version: %s (protocol %s)", version, version.protocol_version
-    )
-
-    create_servers_dat("minecraft/servers.dat", "localhost:25565")
-    create_options_txt(version, "minecraft/options.txt")
-
-
-if __name__ == "__main__":
-    _main()
