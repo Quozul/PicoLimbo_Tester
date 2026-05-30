@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from . import database
@@ -20,6 +21,14 @@ app = FastAPI(
     title="PicoLimbo Build API",
     description="Build and test PicoLimbo against Minecraft versions on demand.",
     version="0.2.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Start the build queue worker on startup
