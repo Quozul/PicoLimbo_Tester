@@ -4,6 +4,7 @@ import {
   createJobPoller,
   retryJob,
   listScreenshots,
+  getScreenshotUrl,
   type JobInfo,
   type TestResult,
 } from "@/lib/api"
@@ -20,8 +21,9 @@ import {
   Clock,
   RotateCcw,
   AlertTriangle,
-  ChevronDown,
-  ChevronUp,
+  Download,
+  ExternalLink,
+  Image as ImageIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -100,11 +102,15 @@ function formatEta(seconds?: number | null): string {
 
 export function JobProgress({ job }: JobProgressProps) {
   const [currentJob, setCurrentJob] = useState<JobInfo>(job)
-  const [expandedVersions, setExpandedVersions] = useState<Set<string>>(new Set())
-  const [screenshots, setScreenshots] = useState<Map<string, string>>(new Map())
+  const [screenshotUrls, setScreenshotUrls] = useState<Map<string, string>>(new Map())
   const [loading, setLoading] = useState(false)
 
   const pollerRef = useRef<ReturnType<typeof createJobPoller> | null>(null)
+
+  // Sync internal state when the job prop changes
+  useEffect(() => {
+    setCurrentJob(job)
+  }, [job])
 
   // Poll for updates
   useEffect(() => {
@@ -114,12 +120,12 @@ export function JobProgress({ job }: JobProgressProps) {
         setCurrentJob(updated)
         // Fetch screenshots when new test results appear
         listScreenshots(updated.job_id)
-          .then(screenshots => {
-            const screenshotMap = new Map<string, string>()
-            screenshots.forEach(s => {
-              screenshotMap.set(s.screenshot_id, s.path)
+          .then(screenshotItems => {
+            const urlMap = new Map<string, string>()
+            screenshotItems.forEach(s => {
+              urlMap.set(s.screenshot_id, getScreenshotUrl(updated.job_id, s.screenshot_id))
             })
-            setScreenshots(screenshotMap)
+            setScreenshotUrls(urlMap)
           })
           .catch(() => {})
       },
@@ -133,12 +139,12 @@ export function JobProgress({ job }: JobProgressProps) {
 
     // Initial screenshot fetch
     listScreenshots(job.job_id)
-      .then(screenshots => {
-        const screenshotMap = new Map<string, string>()
-        screenshots.forEach(s => {
-          screenshotMap.set(s.screenshot_id, s.path)
+      .then(screenshotItems => {
+        const urlMap = new Map<string, string>()
+        screenshotItems.forEach(s => {
+          urlMap.set(s.screenshot_id, getScreenshotUrl(job.job_id, s.screenshot_id))
         })
-        setScreenshots(screenshotMap)
+        setScreenshotUrls(urlMap)
       })
       .catch(() => {})
 
@@ -155,24 +161,15 @@ export function JobProgress({ job }: JobProgressProps) {
     ? currentJob.versions
     : ALL_VERSIONS.map(v => v.label)
 
-  // Group by major version for display
+  // Group by minor version for display
   const groupedByMajor = displayVersions.reduce<Record<string, string[]>>((acc, label) => {
     const ver = ALL_VERSIONS.find(v => v.label === label)
     if (!ver) return acc
-    const group = ver.major >= 20 ? `26.x` : `1.${ver.minor}`
+    const group = ver.major === 1 ? `1.${ver.minor}` : `${ver.major}.${ver.minor}`
     if (!acc[group]) acc[group] = []
     acc[group].push(label)
     return acc
   }, {})
-
-  const toggleVersion = useCallback((label: string) => {
-    setExpandedVersions(prev => {
-      const next = new Set(prev)
-      if (next.has(label)) next.delete(label)
-      else next.add(label)
-      return next
-    })
-  }, [])
 
   const handleRetry = useCallback(async () => {
     setLoading(true)
@@ -282,69 +279,84 @@ export function JobProgress({ job }: JobProgressProps) {
         </div>
       )}
 
-      {/* Version test results */}
+      {/* Version results with inline screenshots */}
       {Object.keys(currentJob.test_results).length > 0 && (
-        <div className="flex flex-col gap-0.5">
+        <div className="flex flex-col gap-1">
           {Object.entries(groupedByMajor).map(([group, versions]) => (
-            <div key={group} className="border border-border">
-              <div className="px-2 py-1.5 text-[10px] font-medium text-muted-foreground bg-muted/20">
+            <div key={group} className="flex flex-col gap-0.5">
+              <div className="px-2 py-1 text-[10px] font-medium text-muted-foreground bg-muted/20">
                 {group}
               </div>
               {versions.map(label => {
                 const result = getTestResultForVersion(currentJob, label)
-                const isExpanded = expandedVersions.has(label)
-                const hasScreenshot = screenshots.has(label)
+                const screenshotUrl = screenshotUrls.get(label)
+                const hasScreenshot = !!screenshotUrl
+                const isPending = !result
 
                 return (
-                  <div key={label}>
-                    <button
-                      onClick={() => toggleVersion(label)}
-                      className={cn(
-                        "flex w-full items-center gap-2 px-2 py-1 text-xs transition-colors hover:bg-muted/30",
-                        result?.passed === false ? "bg-destructive/5" : ""
-                      )}
-                    >
+                  <div
+                    key={label}
+                    className={cn(
+                      "flex flex-col border border-border",
+                      result?.passed === false ? "border-destructive/30" : ""
+                    )}
+                  >
+                    {/* Row: status + version + duration */}
+                    <div className="flex items-center gap-2 px-2 py-1 text-xs">
                       <span className="size-3 shrink-0">
-                        {result ? (
-                          result.passed ? (
-                            <CheckCircle2 className="size-3 text-green-500" />
-                          ) : (
-                            <XCircle className="size-3 text-destructive" />
-                          )
-                        ) : (
+                        {isPending ? (
                           <Loader2 className="size-3 text-muted-foreground animate-spin" />
+                        ) : result?.passed ? (
+                          <CheckCircle2 className="size-3 text-green-500" />
+                        ) : (
+                          <XCircle className="size-3 text-destructive" />
                         )}
                       </span>
                       <span className="font-mono">{label}</span>
                       <span className="ml-auto text-[10px] text-muted-foreground">
                         {result?.duration_seconds != null
                           ? formatDuration(result.duration_seconds)
-                          : ""}
+                          : "—"}
                       </span>
-                      {hasScreenshot && (
-                        isExpanded ? (
-                          <ChevronUp className="size-3 text-muted-foreground" />
-                        ) : (
-                          <ChevronDown className="size-3 text-muted-foreground" />
-                        )
-                      )}
-                    </button>
+                    </div>
 
-                    {isExpanded && result && (
-                      <div className="px-2 py-2 pl-5 text-[10px]">
-                        {result.error && (
-                          <div className="text-destructive mb-1">{result.error}</div>
-                        )}
-                        {hasScreenshot && (
-                          <a
-                            href={getScreenshotUrl(currentJob.job_id, label)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary underline-offset-2 hover:underline"
-                          >
-                            View screenshot
-                          </a>
-                        )}
+                    {/* Screenshot */}
+                    {hasScreenshot && (
+                      <div className="border-t border-border px-2 py-2">
+                        <div className="relative overflow-hidden rounded-none border border-border bg-muted/20">
+                          <img
+                            src={screenshotUrl}
+                            alt={`${label} screenshot`}
+                            className="w-full max-h-[240px] object-contain"
+                            loading="lazy"
+                          />
+                          <div className="absolute bottom-1 right-1 flex gap-1">
+                            <a
+                              href={screenshotUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex h-5 items-center gap-1 rounded-none border border-border bg-background/80 px-1.5 text-[9px] text-muted-foreground backdrop-blur hover:bg-background hover:text-foreground transition-colors"
+                            >
+                              <ExternalLink className="size-2.5" />
+                              Open
+                            </a>
+                            <a
+                              href={screenshotUrl}
+                              download={`${label}.png`}
+                              className="flex h-5 items-center gap-1 rounded-none border border-border bg-background/80 px-1.5 text-[9px] text-muted-foreground backdrop-blur hover:bg-background hover:text-foreground transition-colors"
+                            >
+                              <Download className="size-2.5" />
+                              Save
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Error message */}
+                    {result?.error && (
+                      <div className="border-t border-border px-2 py-1 text-[10px] text-destructive">
+                        {result.error}
                       </div>
                     )}
                   </div>
@@ -356,9 +368,4 @@ export function JobProgress({ job }: JobProgressProps) {
       )}
     </div>
   )
-}
-
-function getScreenshotUrl(jobId: string, screenshotId: string): string {
-  const API_BASE = import.meta.env.VITE_API_URL || "/api"
-  return `${API_BASE}/jobs/${jobId}/screenshots/${screenshotId}`
 }

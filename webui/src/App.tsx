@@ -1,14 +1,11 @@
 import { useState, useCallback, useEffect } from "react"
 import { JobForm } from "@/components/JobForm"
 import { JobProgress } from "@/components/JobProgress"
-import { ScreenshotViewer } from "@/components/ScreenshotViewer"
 import { VncViewer } from "@/components/VncViewer"
-import { createJob, listJobs, type JobInfo } from "@/lib/api"
+import { listJobs, type JobInfo } from "@/lib/api"
 import {
   Activity,
-  Monitor,
   LayoutPanelLeft,
-  Eye,
   MonitorCog,
   Clock,
   CheckCircle2,
@@ -18,8 +15,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react"
-
-type ViewMode = "progress" | "screenshots"
+import { cn } from "@/lib/utils"
 
 function getStatusIcon(status: string) {
   switch (status) {
@@ -67,8 +63,6 @@ function formatTimeAgo(timestamp: string): string {
 export function App() {
   const [activeJob, setActiveJob] = useState<JobInfo | null>(null)
   const [jobs, setJobs] = useState<JobInfo[]>([])
-  const [expandedJobs, setExpandedJobs] = useState<Set<string>>(new Set())
-  const [viewMode, setViewMode] = useState<ViewMode>("progress")
   const [loadingJobs, setLoadingJobs] = useState(true)
 
   const fetchJobs = useCallback(async () => {
@@ -94,21 +88,10 @@ export function App() {
     fetchJobs()
   }, [fetchJobs])
 
-  const toggleJobExpand = useCallback((jobId: string) => {
-    setExpandedJobs(prev => {
-      const next = new Set(prev)
-      if (next.has(jobId)) next.delete(jobId)
-      else next.add(jobId)
-      return next
-    })
-  }, [])
-
   const handleSelectJob = useCallback((job: JobInfo) => {
     setActiveJob(job)
-    setViewMode("progress")
   }, [])
 
-  // Find the most recent job that matches the active job
   const latestJob = jobs.find(j => j.job_id === activeJob?.job_id)
 
   return (
@@ -160,11 +143,10 @@ export function App() {
                 </div>
               ) : (
                 jobs.map(job => {
-                  const isExpanded = expandedJobs.has(job.job_id)
                   const isLatest = job.job_id === activeJob?.job_id
-                  const testResults = job.test_results || {}
-                  const passed = Object.values(testResults).filter(r => r.passed).length
-                  const failed = Object.values(testResults).filter(r => !r.passed).length
+                  const testResults = Object.values(job.test_results)
+                  const passed = testResults.filter(r => r.passed).length
+                  const failed = testResults.filter(r => !r.passed).length
 
                   return (
                     <div
@@ -206,11 +188,6 @@ export function App() {
                           )}
                         </div>
                       </div>
-                      {isExpanded ? (
-                        <ChevronUp className="size-3 text-muted-foreground shrink-0" />
-                      ) : (
-                        <ChevronDown className="size-3 text-muted-foreground shrink-0" />
-                      )}
                     </div>
                   )
                 })
@@ -218,41 +195,10 @@ export function App() {
             </div>
           </div>
 
-          {/* Job progress / screenshots */}
+          {/* Job progress with inline screenshots */}
           <div className="flex-1 overflow-y-auto px-4 py-4 border-t border-border">
             {latestJob ? (
-              <>
-                {/* View mode tabs */}
-                <div className="flex items-center gap-1 mb-3">
-                  <button
-                    onClick={() => setViewMode("progress")}
-                    className={cn(
-                      "flex items-center gap-1.5 rounded-none border px-2.5 py-1 text-xs transition-colors",
-                      viewMode === "progress"
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border bg-transparent text-muted-foreground hover:bg-muted/50"
-                    )}
-                  >
-                    <Monitor className="size-3.5" />
-                    Progress
-                  </button>
-                  <button
-                    onClick={() => setViewMode("screenshots")}
-                    className={cn(
-                      "flex items-center gap-1.5 rounded-none border px-2.5 py-1 text-xs transition-colors",
-                      viewMode === "screenshots"
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border bg-transparent text-muted-foreground hover:bg-muted/50"
-                    )}
-                  >
-                    <Eye className="size-3.5" />
-                    Screenshots
-                  </button>
-                </div>
-
-                {viewMode === "progress" && <JobProgress job={latestJob} />}
-                {viewMode === "screenshots" && <ScreenshotViewer job={latestJob} />}
-              </>
+              <JobProgress job={latestJob} />
             ) : (
               <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
                 <MonitorCog className="size-12 text-muted-foreground/30" />
@@ -276,10 +222,6 @@ export function App() {
       </div>
     </div>
   )
-}
-
-function cn(...classes: (string | undefined | false | null)[]) {
-  return classes.filter(Boolean).join(" ")
 }
 
 export default App

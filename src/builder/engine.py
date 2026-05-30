@@ -14,9 +14,9 @@ logger = logging.getLogger(__name__)
 REPOS_DIR = Path("/app/repos")
 BUILDS_DIR = Path("/app/builds")
 
-# GitHub URL pattern: https://github.com/{owner}/{repo}.git
+# GitHub URL pattern: https://github.com/{owner}/{repo} (with or without .git)
 GITHUB_URL_RE = re.compile(
-    r"^https://github\.com/([^/]+)/([^/]+)\.git$"
+    r"^https://github\.com/([^/]+)/([^/]+)(?:\.git)?$"
 )
 
 # Git commit hash: 40-character hex string
@@ -34,7 +34,12 @@ def extract_owner_from_url(repo_url: str) -> tuple[str, str]:
             f"Only GitHub repository URLs are allowed. "
             f"Got: {repo_url}"
         )
-    return match.group(1), match.group(2)
+    owner = match.group(1)
+    repo_name = match.group(2)
+    # Strip .git suffix if present (regex captures it as part of group 2)
+    if repo_name.endswith(".git"):
+        repo_name = repo_name[:-4]
+    return owner, repo_name
 
 
 def is_commit_hash(ref: str) -> bool:
@@ -80,11 +85,8 @@ def ensure_repo_cloned(owner: str, repo_name: str) -> Path:
 def update_repo(repo_path: Path, ref: str) -> None:
     """Update an existing repo: fetch latest and checkout the ref."""
     logger.info("Updating repo at %s (ref=%s)", repo_path, ref)
-    _run(["git", "fetch", "origin"], cwd=repo_path)
-    if is_commit_hash(ref):
-        _run(["git", "checkout", ref], cwd=repo_path)
-    else:
-        _run(["git", "checkout", ref], cwd=repo_path)
+    _run(["git", "fetch", "--depth=1", "origin", ref], cwd=repo_path)
+    _run(["git", "checkout", "FETCH_HEAD"], cwd=repo_path)
     logger.info("Repo updated at %s", repo_path)
 
 
@@ -99,9 +101,9 @@ def resolve_commit(repo_path: Path, ref: str) -> str:
         _run(["git", "checkout", ref], cwd=repo_path)
         logger.info("Checked out commit %s", commit_hash)
     else:
-        # Fetch latest for the branch
-        _run(["git", "fetch", "origin", ref], cwd=repo_path)
-        _run(["git", "checkout", ref], cwd=repo_path)
+        # Fetch the specific branch with depth=1 (shallow clone friendly)
+        _run(["git", "fetch", "--depth=1", "origin", ref], cwd=repo_path)
+        _run(["git", "checkout", "FETCH_HEAD"], cwd=repo_path)
         # Resolve to full commit hash
         output = _run(["git", "rev-parse", "HEAD"], cwd=repo_path)
         commit_hash = output

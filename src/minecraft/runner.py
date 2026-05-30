@@ -23,7 +23,7 @@ REPORTS_DIRECTORY = "integration_tests_reports"
 # Absolute position of the "Quit Game" button within the 1024x768 game window.
 # Computed for the new standard resolution.
 _QUIT_REGION_NEWER = (519, 588, 294, 60)
-_QUIT_REGION_OLDER = (517, 602, 294, 60)
+_QUIT_REGION_OLDER = (517, 600, 294, 60)
 
 
 def _is_lwjgl2_version(version: str) -> bool:
@@ -149,8 +149,7 @@ def log_to_multiplayer(
     click_in_minecraft_window(virtual_device, 507, 438)
     # Click on server's button
     if version.startswith("1.7."):
-        # TODO: These coordinates are probably incorrect for 1.7.x
-        click_in_minecraft_window(virtual_device, 507, 146)
+        click_in_minecraft_window(virtual_device, 507, 264)
     else:
         click_in_minecraft_window(virtual_device, 507, 146)
     # Click on "Join Server" button
@@ -212,8 +211,12 @@ def get_latest_screenshot(directory: str) -> str:
     )
 
 
-def test_screenshot(version: str, commit_hash: str, virtual_device: VirtualInputController,
-                    screenshots_dir: str) -> str:
+def test_screenshot(
+    version: str,
+    commit_hash: str,
+    virtual_device: VirtualInputController,
+    screenshots_dir: str,
+) -> str:
     screenshot_directory = os.path.join(GAME_DIRECTORY, "screenshots")
     empty_directory(screenshot_directory)
 
@@ -237,8 +240,12 @@ def test_screenshot(version: str, commit_hash: str, virtual_device: VirtualInput
     return dest_path
 
 
-def test_single_version(version: str, commit_hash: str, virtual_device: VirtualInputController,
-                        screenshots_dir: str) -> dict:
+def test_single_version(
+    version: str,
+    commit_hash: str,
+    virtual_device: VirtualInputController,
+    screenshots_dir: str,
+) -> dict:
     """Test a single Minecraft version. Returns a test result dict."""
     logger.info("--- Starting test for version: %s ---", version)
     process = None
@@ -257,7 +264,9 @@ def test_single_version(version: str, commit_hash: str, virtual_device: VirtualI
         virtual_device.set_window(window_id)
         log_to_multiplayer(version, virtual_device, window_id)
         time.sleep(2)  # wait for the player to be logged in
-        screenshot_path = test_screenshot(version, commit_hash, virtual_device, screenshots_dir)
+        screenshot_path = test_screenshot(
+            version, commit_hash, virtual_device, screenshots_dir
+        )
         result["passed"] = True
         result["screenshot_path"] = screenshot_path
         logger.info("✅ Test PASSED for version: %s", version)
@@ -279,5 +288,3 @@ def test_single_version(version: str, commit_hash: str, virtual_device: VirtualI
                 )
                 process.kill()
         result["duration_seconds"] = round(time.time() - start_time, 1)
-
-

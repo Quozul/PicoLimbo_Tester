@@ -111,16 +111,17 @@ export const ALL_VERSIONS: MinecraftVersion[] = [
 ]
 
 export const GROUPED_VERSIONS = ALL_VERSIONS.reduce<Record<string, MinecraftVersion[]>>((acc, v) => {
-  const group = v.major >= 20 ? `26.x` : `1.${v.minor}`
+  const group = v.major === 1 ? `1.${v.minor}` : `${v.major}.${v.minor}`
   if (!acc[group]) acc[group] = []
   acc[group].push(v)
   return acc
 }, {})
 
 export const VERSION_GROUPS = Object.keys(GROUPED_VERSIONS).sort((a, b) => {
-  const aNum = parseFloat(a.replace('.x', ''))
-  const bNum = parseFloat(b.replace('.x', ''))
-  return aNum - bNum
+  const [aMajor, aMinor] = a.split('.').map(Number)
+  const [bMajor, bMinor] = b.split('.').map(Number)
+  if (aMajor !== bMajor) return aMajor - bMajor
+  return aMinor - bMinor
 })
 
 export const ALL_VERSION_LABELS = ALL_VERSIONS.map(v => v.label)

@@ -178,7 +178,8 @@ def _test_step(job: dict, versions: list[str], server_proc: Optional[subprocess.
     commit_hash = job["commit_hash"]
     test_results = dict(job.get("test_results") or {})
 
-    # Get all versions already tested for this commit hash (globally)
+    # Get all versions that have passed across all jobs for this commit hash.
+    # Failed versions are intentionally excluded so they get retried.
     globally_tested = database.get_tested_versions_for_commit(commit_hash)
 
     # Get the latest completed job's test results for screenshot lookups
@@ -195,7 +196,7 @@ def _test_step(job: dict, versions: list[str], server_proc: Optional[subprocess.
     try:
         for version in versions:
             if version in globally_tested:
-                logger.info("Job %s: version %s already tested for commit %s, skipping", job_id, version, commit_hash[:8])
+                logger.info("Job %s: version %s already passed for commit %s, skipping", job_id, version, commit_hash[:8])
                 # Look up screenshot from the previous completed job's test results
                 screenshot_path = None
                 if previous_results and version in previous_results:

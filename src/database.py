@@ -82,18 +82,24 @@ def get_job_by_id(job_id: str) -> Optional[dict]:
 
 
 def get_tested_versions_for_commit(commit_hash: str) -> set[str]:
-    """Get all versions that have been tested across all jobs for a given commit hash."""
+    """Get all versions that have been successfully tested (passed) across all jobs for a given commit hash.
+
+    Only returns versions where passed == True. Failed versions are excluded so they
+    can be retried by subsequent jobs.
+    """
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT test_results FROM jobs WHERE commit_hash = ?",
             (commit_hash,),
         ).fetchall()
-    tested: set[str] = set()
+    passed: set[str] = set()
     for row in rows:
         raw = json.loads(row["test_results"]) if row["test_results"] else None
         if isinstance(raw, dict):
-            tested.update(raw.keys())
-    return tested
+            for version, result in raw.items():
+                if isinstance(result, dict) and result.get("passed") is True:
+                    passed.add(version)
+    return passed
 
 
 def get_latest_test_results_for_commit(commit_hash: str) -> Optional[dict]:
