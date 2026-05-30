@@ -182,8 +182,13 @@ def _test_step(job: dict, versions: list[str], server_proc: Optional[subprocess.
     # Failed versions are intentionally excluded so they get retried.
     globally_tested = database.get_tested_versions_for_commit(commit_hash)
 
-    # Get the latest completed job's test results for screenshot lookups
+    # Get the latest completed job's test results for screenshot lookups.
+    # Fall back to the current job's own test_results (e.g. on retry, the job's
+    # status is reset to 'queued', so get_latest_test_results_for_commit won't
+    # find any 'finished' job for this commit hash).
     previous_results = database.get_latest_test_results_for_commit(commit_hash)
+    if previous_results is None:
+        previous_results = test_results
 
     # Ensure screenshots directory exists
     os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
