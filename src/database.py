@@ -63,7 +63,7 @@ def create_job(
         conn.execute(
             """
             INSERT INTO jobs (job_id, repo_url, ref, owner, commit_hash, status, current_step, versions, test_results, error_message, eta_seconds, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 'queued', NULL, ?, '{}', NULL, NULL, ?, ?)
+            VALUES (?, ?, ?, ?, ?, 'queued', NULL, ?, '[]', NULL, NULL, ?, ?)
             """,
             (job_id, repo_url, ref, owner, commit_hash, json.dumps(versions), now, now),
         )
@@ -155,7 +155,7 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
         "artifact_path": row["artifact_path"],
         "current_step": row["current_step"],
         "versions": json.loads(row["versions"]) if row["versions"] else [],
-        "test_results": json.loads(row["test_results"]) if row["test_results"] else {},
+        "test_results": (json.loads(row["test_results"]) if row["test_results"] else []) or [],
         "error_message": row["error_message"],
         "eta_seconds": row["eta_seconds"],
         "created_at": row["created_at"],
