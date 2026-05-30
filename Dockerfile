@@ -1,10 +1,11 @@
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y \
     curl \
     default-jre-headless \
+    git \
     libegl1 \
     libgl1 \
     libgl1-mesa-dri \
@@ -28,6 +29,12 @@ COPY xorg.conf /etc/X11/xorg.conf
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:$PATH"
 
+# Install rustup via apt, then update to latest stable toolchain
+RUN apt-get update && apt-get install -y rustup && \
+    rustup default stable && \
+    rustup update stable
+ENV PATH="/root/.cargo/bin:$PATH"
+
 WORKDIR /app
 
 COPY references ./references
@@ -44,7 +51,7 @@ ENV DISPLAY=:1
 ENV LIBGL_ALWAYS_SOFTWARE=1
 ENV PYTHONUNBUFFERED=1
 
-# 5900 = VNC, 6080 = noVNC web interface
-EXPOSE 5900 6080
+# 5900 = VNC, 6080 = noVNC web interface, 8000 = Build API
+EXPOSE 5900 6080 8000
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]

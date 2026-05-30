@@ -1,3 +1,11 @@
 /.venv
 /.idea
 /integration_tests_reports
+/full_screenshots
+/cache
+/__pycache__
+*.pyc
+*.pyo
+.git
+.gitignore
+PLAN.md
