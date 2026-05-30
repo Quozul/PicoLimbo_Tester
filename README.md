@@ -1,50 +1,152 @@
-This project is intended to be used to test all versions of Minecraft agaisn't a custom minecraft server (PicoLimbo).
-It does that by starting the game inside a container using a virtual desktop (Xorg) and then perform a few steps:
-1. Launch the game in one version
-2. Wait for the quit button to become visible (this is the most reliable way I found to test if the game is fully launched)
-3. Click on "Multiplayer" button, then on the server's list entry and finally on "Join Server"
-4. It then waits a little (30 seconds) to ensure the player has spawned in the world
-5. Finally, it takes a screenshot and saves it to a volume outside the container.
+# PicoLimbo Integration Tests
 
-Start the tests using Docker compose:
+A Docker-based test harness for verifying [PicoLimbo](https://github.com/Quozul/PicoLimbo), an ultra-lightweight, multi-version Minecraft limbo server written in Rust, against real Minecraft clients across dozens of versions.
+
+## What It Does
+
+PicoLimbo is a lightweight Minecraft server that can handle many concurrent players. This project tests it by:
+
+1. **Building** PicoLimbo from a Git repository (branch name or commit hash).
+2. **Launching one PicoLimbo server** inside the container.
+3. **Running Minecraft clients** — for each requested version, a real Minecraft instance is launched inside a virtual desktop (Xvfb/Xorg), connects to the **same** server, and is verified by matching screen regions (the quit button appearing confirms the game is fully loaded).
+4. **Capturing screenshots** of each successful connection, stored as test artifacts.
+5. **Shutting down** the server once all version tests are complete.
+
+The entire system runs inside a single Docker container with a virtual display, making it suitable for CI/CD pipelines or headless environments.
+
+## Quick Start
+
+### Prerequisites
+
+- [Docker](https://www.docker.com/) and [Docker Compose](https://docs.docker.com/compose/)
+- A machine with at least 2 GB of RAM (more if testing many versions concurrently)
+
+### Running the Project
 
 ```shell
-docker compose up --build --abort-on-container-exit --exit-code-from pico-tests && docker compose down
+# Build and start the container in detached mode
+docker compose up --build -d
+
+# Check the API is running
+curl http://localhost:8000/health
 ```
 
-Connect to the VNC server to see what's going on: http://localhost:6080/vnc.html
+### Creating a Test Job
 
-# TODO
+```shell
+# Test a single version
+curl -X POST http://localhost:8000/jobs \
+  -H "Content-Type: application/json" \
+  -d '{"versions": ["1.21.8"]}'
 
-Here is a list of improvements I want to make to this tool:
+# Test multiple versions
+curl -X POST http://localhost:8000/jobs \
+  -H "Content-Type: application/json" \
+  -d '{"versions": ["1.20.4", "1.21.0", "1.21.8"]}'
 
-- Being able to test several server configurations such as:
-  - Connect to PicoLimbo directly
-  - Connect through a Velocity proxy
-    - With modern forwarding (from 1.13 to latest version)
-    - With legacy forwarding (from 1.7.2)
-    - With BungeeGuard forwarding (from 1.7.2)
-  - Connect through a BungeeCord proxy (from 1.8 to latest version)
-    - With BungeeGuard plugin (from 1.8)
-  - Connect through a proxy running either one of the following plugins or all of them:
-    - ViaVersion
-    - PacketEvents
-    - A small custom plugin to hold the player in the configuration state for longer than usual (tests the keep alive)  
-      These plugins, when installed on the proxy are known for causing issues with PicoLimbo.
-- Keep the player connected for at least 30 seconds to ensure they don't get kicked out from the server
+# Use a specific branch or commit
+curl -X POST http://localhost:8000/jobs \
+  -H "Content-Type: application/json" \
+  -d '{"ref": "feature/xyz", "versions": ["1.21.8"]}'
+```
 
-# How to update references
+### Monitoring Progress
 
-If one new version has a new quit button texture or if the resolution of the game window changes, it is necessary to update the references images to detect properly the quit button.
+```shell
+# Check job status
+curl http://localhost:8000/jobs/<job_id>
+
+# List all jobs
+curl http://localhost:8000/jobs
+
+# Filter by status
+curl "http://localhost:8000/jobs?status=testing"
+```
+
+### Visual Debugging
+
+The container exposes a VNC server so you can watch the virtual desktop in real time:
+
+- **Web VNC:** http://localhost:6080/vnc.html
+- **VNC (port 5900):** Use any VNC client to connect to `localhost:5900` (no password)
+
+### Viewing Results
+
+```shell
+# List screenshots for a job
+curl http://localhost:8000/jobs/<job_id>/screenshots
+
+# Download a specific screenshot
+curl -o screenshot.png http://localhost:8000/jobs/<job_id>/screenshots/1.21.8
+
+# Download the built PicoLimbo binary (debug)
+curl -o pico_limbo http://localhost:8000/jobs/<job_id>/artifact
+```
+
+Screenshots and artifacts are also available on the host via Docker volumes:
+
+- `./integration_tests_reports/` — test screenshots
+- `./cache/builds/` — built binaries and database
+
+## Configuration
+
+### Job Parameters
+
+| Parameter | Default | Description |
+|---|---|---|
+| `repo_url` | `https://github.com/Quozul/PicoLimbo.git` | GitHub repository URL (must be github.com) |
+| `ref` | `master` | Branch name or commit hash |
+| `versions` | All supported versions | List of Minecraft versions to test |
+
+## Supported Minecraft Versions
+
+The project supports **81 Minecraft versions**, ranging from **1.7.2** to **26.1.2** (the latest snapshots). Version metadata including protocol numbers is defined in `src/versions.py`.
+
+For LWJGL 2 compatibility (Minecraft 1.7–1.12), the virtual display uses a real XRandR mode list to prevent crashes.
+
+## Updating Reference Images
+
+If a new Minecraft version changes the quit button texture or the game window resolution, the reference images used for screen matching need to be updated:
 
 ```shell
 docker compose run --build --rm pico-tests python3 update_references.py
 ```
 
-# Minimal `options.txt`
+## Minimal `options.txt`
 
-The minimal options to start the game without burden:
+The Minecraft launcher uses a minimal `options.txt` to avoid unnecessary UI elements:
+
 ```yaml
-skipMultiplayerWarning:true # added in 1.15.2
-tutorialStep:none           # added in 1.12
+skipMultiplayerWarning: true   # added in 1.15.2
+tutorialStep: none             # added in 1.12
+joinedFirstServer: true        # added in 1.16.4
 ```
+
+---
+
+## What's Missing / TODO
+
+### Proxy Testing Scenarios (from original design)
+
+The following proxy configurations are planned but not yet implemented:
+
+- **Direct connection** to PicoLimbo (basic)
+- **Velocity proxy** — modern forwarding (1.13+) and legacy forwarding
+- **BungeeCord proxy** — with and without BungeeGuard (1.8+)
+- **ViaVersion** plugin — version translation layer
+- **PacketEvents** plugin — packet manipulation framework
+- **Custom keep-alive plugin** — holds the player in configuration state to test server keep-alive handling
+
+### Low Priority
+
+- **Keep player connected for 30+ seconds** — to verify the player isn't kicked unexpectedly
+- **Web-based UI** — A frontend to visualize job progress, screenshots, and results (API is already available)
+- **Concurrent job processing** — Currently only one job runs at a time
+- **Database migrations** — Schema is static; no migration system for adding new fields
+
+## Known Issues
+
+- **Monolithic job runner** — Build, server management, and Minecraft testing logic are all in `job_runner.py`. These should be split into separate modules.
+- **No per-version status tracking** — The `test_results` field is a flat dict. There's no way to independently track which versions succeeded or failed within a multi-version job.
+- **Duplicated response formatting** — The `test_results` dict-to-list conversion is repeated across multiple API endpoints in `main.py`.
+- **Static database schema** — No migration system; adding new columns requires manual intervention.
