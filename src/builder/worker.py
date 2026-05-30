@@ -4,7 +4,7 @@ import logging
 import threading
 from typing import Optional
 
-from . import database
+from .. import database
 from . import engine
 from ..orchestration import job_runner
 

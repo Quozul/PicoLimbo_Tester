@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 GAME_DIRECTORY = str(pathlib.Path().resolve().joinpath("minecraft"))
 REPORTS_DIRECTORY = "integration_tests_reports"
 
-# Relative position of the "Quit Game" button within the 1024x768 game window.
+# Absolute position of the "Quit Game" button within the 1024x768 game window.
 # Computed for the new standard resolution.
 _QUIT_REGION_NEWER = (519, 588, 294, 60)
 _QUIT_REGION_OLDER = (517, 602, 294, 60)
@@ -36,10 +36,6 @@ def _is_lwjgl2_version(version: str) -> bool:
         return False
 
 
-def _is_wayland() -> bool:
-    return bool(os.environ.get("WAYLAND_DISPLAY"))
-
-
 def parse_window_info(window_text: str) -> dict | None:
     position_match = re.search(r"Position:\s*(\d+),(\d+)", window_text)
     geometry_match = re.search(r"Geometry:\s*(\d+)x(\d+)", window_text)
@@ -51,14 +47,6 @@ def parse_window_info(window_text: str) -> dict | None:
     y = int(position_match.group(2))
     width = int(geometry_match.group(1))
     height = int(geometry_match.group(2))
-
-    if _is_wayland():
-        # In XWayland, xdotool reports the outer window size which includes
-        # client-side decorations: 25 px border on each side and a 36 px title bar.
-        width -= 50
-        height -= 86  # 25 top + 36 title + 25 bottom
-        x += 25
-        y += 61  # 25 top + 36 title
 
     return {"x": x, "y": y, "width": width, "height": height}
 
@@ -131,15 +119,8 @@ def wait_for_game(version: str) -> str:
         )
         time.sleep(0.3)
 
-    absolute_x, absolute_y, width, height = (
-        _QUIT_REGION_OLDER if _is_lwjgl2_version(version) else _QUIT_REGION_NEWER
-    )
-
     watch_region = (
-        absolute_x,
-        absolute_y,
-        width,
-        height,
+        _QUIT_REGION_OLDER if _is_lwjgl2_version(version) else _QUIT_REGION_NEWER
     )
 
     matched = wait_for_screen_region(

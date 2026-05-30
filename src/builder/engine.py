@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
-from . import database
+from .. import database
 
 logger = logging.getLogger(__name__)
 

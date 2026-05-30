@@ -1,7 +1,11 @@
+import logging
 import os
 import time
+
 from PIL import Image, ImageChops
 import pyscreenshot as ImageGrab
+
+logger = logging.getLogger(__name__)
 
 
 def wait_for_screen_region(
@@ -24,7 +28,7 @@ def wait_for_screen_region(
         True if a match is found within the timeout, False otherwise.
     """
     if not os.path.isdir(reference_images_dir):
-        print(f"Error: Reference directory not found at '{reference_images_dir}'")
+        logger.error("Reference directory not found at '%s'", reference_images_dir)
         return False
 
     # --- Pre-load and validate reference images ---
@@ -39,26 +43,32 @@ def wait_for_screen_region(
                 img = Image.open(path).convert("RGB")
 
                 if img.size != region_size:
-                    print(
-                        f"Warning: Skipping '{filename}' - its size {img.size} does not "
-                        f"match the region size {region_size}."
+                    logger.warning(
+                        "Skipping '%s' - its size %s does not match the region size %s.",
+                        filename,
+                        img.size,
+                        region_size,
                     )
                     continue
 
                 ref_images.append((filename, img))
             except Exception as e:
-                print(f"Warning: Could not load image '{filename}'. Error: {e}")
+                logger.warning("Could not load image '%s'. Error: %s", filename, e)
 
     if not ref_images:
-        print(
-            f"Error: No valid reference images found in '{reference_images_dir}' that match the region size."
+        logger.error(
+            "No valid reference images found in '%s' that match the region size.",
+            reference_images_dir,
         )
         return False
     # --- End of pre-loading ---
 
     start_time = time.monotonic()
     x, y, width, height = region
-    print(f"Watching screen region x={x} y={y} w={width} h={height} (timeout={timeout}s)")
+    logger.info(
+        "Watching screen region x=%d y=%d w=%d h=%d (timeout=%.1fs)",
+        x, y, width, height, timeout,
+    )
     last_capture: Image.Image | None = None
 
     while time.monotonic() - start_time < timeout:
@@ -76,16 +86,16 @@ def wait_for_screen_region(
                     return True
             except ValueError as e:
                 # This might happen if image modes are different, though .convert("RGB") should prevent it
-                print(f"Error comparing images: {e}")
+                logger.warning("Error comparing images: %s", e)
 
         # Wait before the next check
         time.sleep(interval)
 
-    print(
-        f"Timeout: Screen region did not match any reference image within {timeout} seconds."
+    logger.error(
+        "Screen region did not match any reference image within %.1f seconds.", timeout
     )
     if last_capture is not None:
         debug_path = "current_capture.png"
         last_capture.save(debug_path)
-        print(f"  Last captured region saved to {debug_path} for inspection.")
+        logger.info("Last captured region saved to %s for inspection.", debug_path)
     return False
