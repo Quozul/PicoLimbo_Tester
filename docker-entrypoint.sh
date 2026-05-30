@@ -44,6 +44,6 @@ echo "Started VNC server on http://localhost:6080/vnc.html"
 
 # Run the integration tests, forwarding any extra arguments.
 if [ $# -eq 0 ]; then
-    set -- python main.py
+    set -- python minecraft_integration_tests.py
 fi
 exec uv run "$@"

@@ -2,7 +2,7 @@ import os
 import time
 import subprocess
 import pyscreenshot as ImageGrab
-from main import (
+from minecraft_integration_tests import (
     start_minecraft,
     get_minecraft_window,
     get_window_info,

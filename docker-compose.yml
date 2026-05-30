@@ -11,8 +11,8 @@ services:
     volumes:
       - ./integration_tests_reports:/app/integration_tests_reports
       - ./full_screenshots:/app/full_screenshots
-      - ./.minecraft:/root/.minecraft
-      - ./minecraft:/app/minecraft
+      - ./cache/.minecraft:/root/.minecraft
+      - ./cache/minecraft:/app/minecraft
     build: .
     depends_on:
       - picolimbo
