@@ -1,18 +1,51 @@
+<div align="center">
+
 # PicoLimbo Integration Tests
 
-A Docker-based test harness for verifying [PicoLimbo](https://github.com/Quozul/PicoLimbo), an ultra-lightweight, multi-version Minecraft limbo server written in Rust, against real Minecraft clients across dozens of versions.
+**A Docker-based test harness for verifying [PicoLimbo](https://github.com/Quozul/PicoLimbo) against real Minecraft clients**
 
-## What It Does
+*Supporting 81 Minecraft versions from 1.7.2 through 26.1.2*
 
-PicoLimbo is a lightweight Minecraft server that can handle many concurrent players. This project tests it by:
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue)](https://www.docker.com/)
+[![Python](https://img.shields.io/badge/Python-3.12+-blue)](https://www.python.org/)
 
-1. **Building** PicoLimbo from a Git repository (branch name or commit hash).
-2. **Launching one PicoLimbo server** inside the container.
-3. **Running Minecraft clients** — for each requested version, a real Minecraft instance is launched inside a virtual desktop (Xvfb/Xorg), connects to the **same** server, and is verified by matching screen regions (the quit button appearing confirms the game is fully loaded).
-4. **Capturing screenshots** of each successful connection, stored as test artifacts.
-5. **Shutting down** the server once all version tests are complete.
+[💬 Join the conversation](https://discord.gg/M2a9dxJPRy) • [📖 PicoLimbo](https://github.com/Quozul/PicoLimbo)
 
-The entire system runs inside a single Docker container with a virtual display, making it suitable for CI/CD pipelines or headless environments.
+</div>
+
+---
+
+## Introduction
+
+PicoLimbo is an ultra-lightweight, multi-version Minecraft limbo server written in Rust. This sidecar project was built specifically to test PicoLimbo against **real Minecraft clients** across dozens of versions.
+
+It builds PicoLimbo from source, launches the server, runs Minecraft clients for each requested version inside a virtual desktop, and captures screenshots confirming successful connections. The entire system runs inside a single Docker container with a virtual display, making it suitable for CI/CD pipelines or headless environments.
+
+---
+
+## Features
+
+### 🏗️ Automated Build Pipeline
+
+Clones the PicoLimbo repository, builds the Rust binary, and caches artifacts. Supports specifying a branch name or commit hash.
+
+### 🎮 Multi-Version Client Testing
+
+Launches real Minecraft clients for each requested version — from **1.7.2 to 26.1.2** — connecting them all to the same PicoLimbo server instance.
+
+### 📸 Screenshot Verification
+
+Each client's screen is captured via virtual display (Xvfb/Xorg). Screen region matching against reference images confirms the game is fully loaded before disconnecting.
+
+### 🖥️ Embedded Web UI
+
+A React-based dashboard is embedded in the Docker image, served at port 8000, providing a three-column layout for job creation, VNC viewing, and job history.
+
+### 📡 REST API
+
+A FastAPI backend exposes endpoints for creating jobs, monitoring progress, and downloading artifacts — all consumable via curl or any HTTP client.
+
+---
 
 ## Quick Start
 
@@ -88,6 +121,37 @@ Screenshots and artifacts are also available on the host via Docker volumes:
 - `./integration_tests_reports/` — test screenshots
 - `./cache/builds/` — built binaries and database
 
+---
+
+## Web UI
+
+The embedded web UI provides a three-column layout for managing tests:
+
+| Column | Description |
+|---|---|
+| **Job Creation** | Submit version lists, branch names, or commit hashes to start new tests |
+| **VNC Viewer** | Watch the virtual desktop in real time via the embedded noVNC client |
+| **Job History** | Browse past jobs, track progress, and view results |
+
+![PicoLimbo Tester UI](docs/PicoLimbo_Tester.png)
+
+---
+
+## API Reference
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/health` | Liveness check |
+| `POST` | `/jobs` | Create a build and test job |
+| `GET` | `/jobs` | List all jobs (optional `?status=` filter) |
+| `GET` | `/jobs/<id>` | Get job information with per-version results |
+| `GET` | `/jobs/<id>/artifact` | Download the built PicoLimbo binary |
+| `GET` | `/jobs/<id>/screenshots` | List screenshots for a job |
+| `GET` | `/jobs/<id>/screenshots/<version>` | Download a specific screenshot |
+| `POST` | `/jobs/<id>/retry` | Retry a failed or finished build |
+
+---
+
 ## Configuration
 
 ### Job Parameters
@@ -98,59 +162,14 @@ Screenshots and artifacts are also available on the host via Docker volumes:
 | `ref` | `master` | Branch name or commit hash |
 | `versions` | All supported versions | List of Minecraft versions to test |
 
-## Supported Minecraft Versions
+### Supported Minecraft Versions
 
-The project supports **81 Minecraft versions**, ranging from **1.7.2** to **26.1.2** (the latest snapshots). Version metadata including protocol numbers is defined in `src/versions.py`.
+The project supports **81 Minecraft versions**, ranging from **1.7.2 to 26.1.2** (the latest snapshots). Version metadata including protocol numbers is defined in `src/versions.py`.
 
 For LWJGL 2 compatibility (Minecraft 1.7–1.12), the virtual display uses a real XRandR mode list to prevent crashes.
 
-## Updating Reference Images
-
-If a new Minecraft version changes the quit button texture or the game window resolution, the reference images used for screen matching need to be updated:
-
-```shell
-docker compose run --build --rm pico-tests python3 update_references.py
-```
-
-## Minimal `options.txt`
-
-The Minecraft launcher uses a minimal `options.txt` to avoid unnecessary UI elements:
-
-```yaml
-skipMultiplayerWarning: true   # added in 1.15.2
-tutorialStep: none             # added in 1.12
-joinedFirstServer: true        # added in 1.16.4
-```
-
 ---
 
-## What's Missing / TODO
+## AI Disclosure
 
-### Proxy Testing Scenarios (from original design)
-
-The following proxy configurations are planned but not yet implemented:
-
-- **Direct connection** to PicoLimbo (basic)
-- **Velocity proxy** — modern forwarding (1.13+) and legacy forwarding
-- **BungeeCord proxy** — with and without BungeeGuard (1.8+)
-- **ViaVersion** plugin — version translation layer
-- **PacketEvents** plugin — packet manipulation framework
-- **Custom keep-alive plugin** — holds the player in configuration state to test server keep-alive handling
-
-### Low Priority
-
-- **Keep player connected for 30+ seconds** — to verify the player isn't kicked unexpectedly
-- **Web-based UI** — A frontend to visualize job progress, screenshots, and results (API is already available)
-- **Concurrent job processing** — Currently only one job runs at a time
-- **Database migrations** — Schema is static; no migration system for adding new fields
-
-## Known Issues
-
-- **Monolithic job runner** — Build, server management, and Minecraft testing logic are all in `job_runner.py`. These should be split into separate modules.
-- **No per-version status tracking** — The `test_results` field is a flat dict. There's no way to independently track which versions succeeded or failed within a multi-version job.
-- **Duplicated response formatting** — The `test_results` dict-to-list conversion is repeated across multiple API endpoints in `main.py`.
-- **Static database schema** — No migration system; adding new columns requires manual intervention.
-
-# AI Disclosure
-
-This project is largely vibe-coded. This is mostly fine as this is for internal use only.
+This project is largely vibe-coded. This is mostly fine as it's for internal use only.

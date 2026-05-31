@@ -41,7 +41,7 @@ export function VncViewer({ vncUrl }: VncViewerProps) {
       )}
     >
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-3 py-3 border-b border-border bg-background/80 backdrop-blur">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-background/80 backdrop-blur">
         <span className="text-xs font-medium text-muted-foreground">
           Live VNC Viewer
         </span>
