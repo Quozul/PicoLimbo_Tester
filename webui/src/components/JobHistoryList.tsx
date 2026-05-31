@@ -89,7 +89,7 @@ export function JobHistoryList({ activeJob, onSelectJob }: JobHistoryListProps) 
   )
 
   return (
-    <div className="flex-shrink-0 border-t border-border px-4 py-3">
+    <div className="flex-shrink-0 border-border px-4 py-3">
       <div className="flex items-center justify-between mb-2">
         <h2 className="text-xs font-medium">Job History</h2>
         <span className="text-[10px] text-muted-foreground">

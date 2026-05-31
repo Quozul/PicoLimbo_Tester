@@ -46,6 +46,16 @@ RUN uv sync --no-dev
 COPY src/ ./src/
 COPY docker-entrypoint.sh ./
 
+# Install Node.js for building the webui
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
+# Build the webui and copy dist into the image
+COPY webui/ ./webui/
+RUN cd webui && npm ci && npm run build
+RUN mkdir -p /app/webui-dist && cp -r webui/dist/* /app/webui-dist/
+
 # Use the Xvfb virtual display and force Mesa software rendering
 # (no physical GPU is available inside the container).
 ENV DISPLAY=:1

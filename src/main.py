@@ -7,7 +7,8 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
+from fastapi.staticfiles import StaticFiles
 
 from . import database
 from .builder import engine, worker
@@ -214,6 +215,42 @@ def list_jobs(
         result.append(response)
 
     return result
+
+
+# ─── Serve embedded webui ──────────────────────────────────────────────────────
+
+WEBUI_DIR = Path(__file__).parent.parent / "webui-dist"
+
+# Serve static assets (JS, CSS, fonts)
+app.mount("/assets", StaticFiles(directory=str(WEBUI_DIR / "assets")), name="assets")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def serve_favicon():
+    """Serve the Vite favicon."""
+    favicon = WEBUI_DIR / "vite.svg"
+    if favicon.exists():
+        return FileResponse(str(favicon), media_type="image/svg+xml")
+    return Response(status_code=404)
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def serve_frontend(full_path: str):
+    """Serve the React SPA for any non-API route."""
+    # Let API routes handle these
+    if full_path.startswith("api/"):
+        return Response(status_code=404)
+
+    # Serve exact files if they exist (for assets loaded by the SPA)
+    file_path = WEBUI_DIR / full_path
+    if file_path.exists() and file_path.is_file():
+        return FileResponse(str(file_path))
+
+    # Fall back to index.html for SPA routing
+    index_path = WEBUI_DIR / "index.html"
+    if index_path.exists():
+        return FileResponse(str(index_path), media_type="text/html")
+    return Response(status_code=404, content="Not found")
 
 
 @app.post(

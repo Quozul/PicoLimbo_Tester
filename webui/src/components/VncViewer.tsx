@@ -36,12 +36,12 @@ export function VncViewer({ vncUrl }: VncViewerProps) {
     <div
       ref={containerRef}
       className={cn(
-        "flex h-full flex-col overflow-hidden border border-border bg-muted/20",
+        "flex h-full flex-col overflow-hidden bg-muted/20",
         isFullscreen ? "fixed inset-0 z-50" : "",
       )}
     >
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-border bg-background/80 backdrop-blur">
+      <div className="flex items-center justify-between px-3 py-3 border-b border-border bg-background/80 backdrop-blur">
         <span className="text-xs font-medium text-muted-foreground">
           Live VNC Viewer
         </span>

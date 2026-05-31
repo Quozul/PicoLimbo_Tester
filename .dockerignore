@@ -9,3 +9,5 @@
 .git
 .gitignore
 PLAN.md
+webui/node_modules
+webui/dist
