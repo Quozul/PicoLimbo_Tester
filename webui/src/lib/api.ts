@@ -6,6 +6,7 @@ export const JobCreateSchema = z.object({
   repo_url: z.string().url().optional().default("https://github.com/Quozul/PicoLimbo.git"),
   ref: z.string().min(1).optional().default("master"),
   versions: z.array(z.string()).nullable().optional(),
+  proxy: z.string().optional().default("none"),
 })
 
 export const TestResultSchema = z.object({
@@ -41,6 +42,12 @@ export const ScreenshotItemSchema = z.object({
 })
 
 export type JobCreateInput = z.infer<typeof JobCreateSchema>
+
+export const ProxyOptions = [
+  { value: "none", label: "None" },
+  { value: "velocity", label: "Velocity" },
+  { value: "bungeecord", label: "BungeeCord (coming soon)" },
+] as const
 export type JobInfo = z.infer<typeof JobInfoSchema>
 export type TestResult = z.infer<typeof TestResultSchema>
 export type ScreenshotItem = z.infer<typeof ScreenshotItemSchema>

@@ -12,5 +12,6 @@ services:
       - ./cache/cargo:/root/.cargo
       - ./cache/repos:/app/repos
       - ./cache/builds:/app/builds
+      - ./cache/proxies:/app/cache/proxies
     build: .
     privileged: true

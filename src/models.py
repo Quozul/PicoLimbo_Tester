@@ -21,6 +21,10 @@ class JobCreate(BaseModel):
         default=None,
         description="List of Minecraft versions to test (default: all versions)",
     )
+    proxy: str = Field(
+        default="none",
+        description="Proxy type: none, velocity, bungeecord",
+    )
 
 
 class TestResult(BaseModel):

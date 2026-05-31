@@ -3,9 +3,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { VersionSelector } from "@/components/VersionSelector"
-import { createJob, type JobCreateInput, type JobInfo } from "@/lib/api"
+import { createJob, type JobCreateInput, type JobInfo, ProxyOptions } from "@/lib/api"
 import { ALL_VERSION_LABELS } from "@/lib/versions"
-import { Loader2, Play } from "lucide-react"
+import { Loader2, Play, Server } from "lucide-react"
 
 interface JobFormProps {
   onJobCreated: (job: JobInfo) => void
@@ -14,6 +14,7 @@ interface JobFormProps {
 export function JobForm({ onJobCreated }: JobFormProps) {
   const [repoUrl, setRepoUrl] = useState("https://github.com/Quozul/PicoLimbo.git")
   const [ref, setRef] = useState("master")
+  const [proxy, setProxy] = useState("none")
   const [selectedVersions, setSelectedVersions] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -36,6 +37,7 @@ export function JobForm({ onJobCreated }: JobFormProps) {
           repo_url: repoUrl || "https://github.com/Quozul/PicoLimbo.git",
           ref: ref || "master",
           versions,
+          proxy,
         }
 
         const job = await createJob(input)
@@ -46,7 +48,7 @@ export function JobForm({ onJobCreated }: JobFormProps) {
         setLoading(false)
       }
     },
-    [repoUrl, ref, selectedVersions, onJobCreated]
+    [repoUrl, ref, proxy, selectedVersions, onJobCreated]
   )
 
   return (
@@ -76,6 +78,28 @@ export function JobForm({ onJobCreated }: JobFormProps) {
           value={ref}
           onChange={e => setRef(e.target.value)}
         />
+      </div>
+
+      {/* Proxy */}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="proxy" className="text-xs">
+          <span className="inline-flex items-center gap-1">
+            <Server className="size-3" />
+            Proxy
+          </span>
+        </Label>
+        <select
+          id="proxy"
+          value={proxy}
+          onChange={e => setProxy(e.target.value)}
+          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {ProxyOptions.map(option => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Version Selector */}

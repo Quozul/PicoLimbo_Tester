@@ -135,7 +135,12 @@ def build_project(repo_path: Path, commit_hash: str, owner: str, ref: str) -> st
     return str(artifact_path)
 
 
-def create_job(repo_url: str, ref: str, versions: Optional[list[str]] = None) -> dict:
+def create_job(
+    repo_url: str,
+    ref: str,
+    versions: Optional[list[str]] = None,
+    proxy: str = "none",
+) -> dict:
     """Always create a new job.
 
     Step-level logic handles skipping/reusing where appropriate:
@@ -157,7 +162,7 @@ def create_job(repo_url: str, ref: str, versions: Optional[list[str]] = None) ->
     commit_hash = resolve_commit(repo_path, ref)
 
     # Always create a new job - step-level logic handles skipping
-    job = database.create_job(repo_url, ref, owner, commit_hash, versions or [])
+    job = database.create_job(repo_url, ref, owner, commit_hash, versions or [], proxy)
     logger.info("Created new job %s for %s@%s", job["job_id"], repo_url, ref)
     return job
 

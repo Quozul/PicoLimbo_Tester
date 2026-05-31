@@ -11,7 +11,11 @@ DB_PATH = Path("/app/builds/jobs.db")
 
 
 def _ensure_db() -> None:
-    """Ensure the database directory and schema exist."""
+    """Ensure the database directory and schema exist.
+
+    Adds the proxy column if the table exists but the column is missing
+    (migration for existing databases).
+    """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(str(DB_PATH)) as conn:
         conn.execute("""
@@ -28,10 +32,17 @@ def _ensure_db() -> None:
                 test_results TEXT,
                 error_message TEXT,
                 eta_seconds INTEGER,
+                proxy TEXT NOT NULL DEFAULT 'none',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
         """)
+        # Migration: add proxy column to existing tables that don't have it
+        try:
+            conn.execute("ALTER TABLE jobs ADD COLUMN proxy TEXT NOT NULL DEFAULT 'none'")
+        except sqlite3.OperationalError:
+            # Column already exists
+            pass
         conn.commit()
 
 
@@ -53,7 +64,12 @@ def _now_iso() -> str:
 
 
 def create_job(
-    repo_url: str, ref: str, owner: str, commit_hash: str, versions: list[str]
+    repo_url: str,
+    ref: str,
+    owner: str,
+    commit_hash: str,
+    versions: list[str],
+    proxy: str = "none",
 ) -> dict:
     """Create a new job. Raises sqlite3.IntegrityError if duplicate."""
     now = _now_iso()
@@ -61,10 +77,10 @@ def create_job(
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO jobs (job_id, repo_url, ref, owner, commit_hash, status, current_step, versions, test_results, error_message, eta_seconds, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 'queued', NULL, ?, '{}', NULL, NULL, ?, ?)
+            INSERT INTO jobs (job_id, repo_url, ref, owner, commit_hash, status, current_step, versions, test_results, error_message, eta_seconds, proxy, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'queued', NULL, ?, '{}', NULL, NULL, ?, ?, ?)
             """,
-            (job_id, repo_url, ref, owner, commit_hash, json.dumps(versions), now, now),
+            (job_id, repo_url, ref, owner, commit_hash, json.dumps(versions), proxy, now, now),
         )
         conn.commit()
     return get_job_by_id(job_id)
@@ -173,7 +189,12 @@ def list_jobs(status: Optional[str] = None, limit: int = 100) -> list[dict]:
 
 
 def _row_to_dict(row: sqlite3.Row) -> dict:
-    return {
+    """Convert a database row to a job dict.
+
+    The proxy column was added by schema migration; if the column
+    doesn't exist (old database) we fall back to the default.
+    """
+    result = {
         "job_id": row["job_id"],
         "status": row["status"],
         "repo_url": row["repo_url"],
@@ -189,6 +210,12 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
+    # Read proxy if the column exists (added by schema migration)
+    try:
+        result["proxy"] = row["proxy"]
+    except KeyError:
+        result["proxy"] = "none"
+    return result
 
 
 def _generate_job_id() -> str:

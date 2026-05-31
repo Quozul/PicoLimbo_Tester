@@ -33,6 +33,7 @@ def _setup_test_db(conn: sqlite3.Connection) -> None:
             test_results TEXT,
             error_message TEXT,
             eta_seconds INTEGER,
+            proxy TEXT NOT NULL DEFAULT 'none',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )

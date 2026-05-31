@@ -766,7 +766,7 @@ class TestRunJobArtifactSkip:
                     with patch("src.orchestration.job_runner.engine.ensure_repo_cloned", return_value="/repos/Quozul/PicoLimbo"):
                         with patch("src.orchestration.job_runner.engine.update_repo"):
                             with patch("src.orchestration.job_runner.engine.resolve_commit", return_value=commit_hash):
-                                with patch("src.orchestration.job_runner._server_step", return_value=MagicMock()):
+                                with patch("src.orchestration.job_runner._server_step", return_value=(None, MagicMock())):
                                     with patch.object(job_runner.database, "get_tested_versions_for_commit", return_value=set()):
                                         with patch.object(job_runner.database, "get_latest_test_results_for_commit", return_value=None):
                                             with patch("src.orchestration.job_runner.test_single_version", return_value=_make_test_result("3.10")):
@@ -803,7 +803,7 @@ class TestRunJobArtifactSkip:
                         with patch("src.orchestration.job_runner.engine.update_repo"):
                             with patch("src.orchestration.job_runner.engine.resolve_commit", return_value=commit_hash):
                                 with patch("src.orchestration.job_runner.engine.build_project") as mock_build:
-                                    with patch("src.orchestration.job_runner._server_step", return_value=MagicMock()):
+                                    with patch("src.orchestration.job_runner._server_step", return_value=(None, MagicMock())):
                                         with patch.object(job_runner.database, "get_tested_versions_for_commit", return_value=set()):
                                             with patch.object(job_runner.database, "get_latest_test_results_for_commit", return_value=None):
                                                 with patch("src.orchestration.job_runner.test_single_version", return_value=_make_test_result("3.10")):
@@ -849,7 +849,7 @@ class TestRunJobVersionSkip:
                     with patch("src.orchestration.job_runner.engine.ensure_repo_cloned", return_value="/repos/Quozul/PicoLimbo"):
                         with patch("src.orchestration.job_runner.engine.update_repo"):
                             with patch("src.orchestration.job_runner.engine.resolve_commit", return_value=commit_hash):
-                                with patch("src.orchestration.job_runner._server_step", return_value=None) as mock_server:
+                                with patch("src.orchestration.job_runner._server_step", return_value=(None, None)) as mock_server:
                                     with patch.object(job_runner.database, "get_tested_versions_for_commit", return_value=globally_tested):
                                         with patch.object(job_runner.database, "get_latest_test_results_for_commit", return_value=previous_results):
                                             with patch("src.orchestration.job_runner.test_single_version") as mock_test:
@@ -899,7 +899,7 @@ class TestRunJobVersionSkip:
                     with patch("src.orchestration.job_runner.engine.ensure_repo_cloned", return_value="/repos/Quozul/PicoLimbo"):
                         with patch("src.orchestration.job_runner.engine.update_repo"):
                             with patch("src.orchestration.job_runner.engine.resolve_commit", return_value=commit_hash):
-                                with patch("src.orchestration.job_runner._server_step", return_value=None):
+                                with patch("src.orchestration.job_runner._server_step", return_value=(None, None)):
                                     with patch.object(job_runner.database, "get_tested_versions_for_commit", return_value=globally_tested):
                                         with patch.object(job_runner.database, "get_latest_test_results_for_commit", return_value=previous_results):
                                             with patch("src.orchestration.job_runner.test_single_version"):
@@ -946,7 +946,7 @@ class TestRunJobVersionSkip:
                     with patch("src.orchestration.job_runner.engine.ensure_repo_cloned", return_value="/repos/Quozul/PicoLimbo"):
                         with patch("src.orchestration.job_runner.engine.update_repo"):
                             with patch("src.orchestration.job_runner.engine.resolve_commit", return_value=commit_hash):
-                                with patch("src.orchestration.job_runner._server_step", return_value=None):
+                                with patch("src.orchestration.job_runner._server_step", return_value=(None, None)):
                                     with patch.object(job_runner.database, "get_tested_versions_for_commit", return_value=globally_tested):
                                         with patch.object(job_runner.database, "get_latest_test_results_for_commit", return_value=previous_results):
                                             with patch("src.orchestration.job_runner.test_single_version"):

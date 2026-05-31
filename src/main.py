@@ -57,7 +57,7 @@ def create_job(body: JobCreate):
     - Tests: skips versions already tested for this commit hash
     """
     try:
-        job = engine.create_job(body.repo_url, body.ref, body.versions)
+        job = engine.create_job(body.repo_url, body.ref, body.versions, body.proxy)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

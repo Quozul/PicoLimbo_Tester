@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import subprocess
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,17 +16,24 @@ from ..builder import engine
 from ..minecraft.env import create_servers_dat
 from ..minecraft.input import VirtualInputController
 from ..minecraft.runner import test_single_version, empty_directory
+from ..proxy import get_proxy_manager
 
 logger = logging.getLogger(__name__)
 
 # Estimated seconds per Minecraft version test (for ETA calculation)
 SECONDS_PER_VERSION = 90
 
-# PicoLimbo config file
+# PicoLimbo config for direct (no-proxy) mode
 SERVER_CONFIG_CONTENT = 'bind = "0.0.0.0:25565"\n'
+
+# PicoLimbo config for proxy mode (binds to internal port)
+SERVER_CONFIG_PROXY_CONTENT = 'bind = "127.0.0.1:30066"\n'
 
 # servers.dat address (must match server bind)
 SERVER_ADDRESS = "127.0.0.1:25565"
+
+# Internal port PicoLimbo binds to when a proxy is in front of it
+PICO_LIMBO_INTERNAL_PORT = 30066
 
 # Paths
 GAME_DIRECTORY = Path("/app/minecraft")
@@ -112,10 +120,16 @@ def _build_step(job: dict) -> tuple[bool, str]:
     return False, artifact_path_str
 
 
-def _server_step(job: dict, versions: list[str]) -> Optional[subprocess.Popen]:
-    """Start PicoLimbo server and wait for it to be ready.
+def _server_step(
+    job: dict, versions: list[str], proxy_type: str = "none"
+) -> tuple[Optional[subprocess.Popen], Optional[subprocess.Popen]]:
+    """Start proxy (if any) and PicoLimbo server, then wait for them to be ready.
 
-    Returns the server process, or None if skipped (all versions already tested).
+    Returns:
+        A tuple of (proxy_process, pico_limbo_process).
+        proxy_process is the proxy (e.g. Velocity), or None for no-proxy mode.
+        pico_limbo_process is the PicoLimbo process.
+        Both can be None if skipped (all versions already tested).
     """
     job_id = job["job_id"]
     artifact_path = job.get("artifact_path")
@@ -125,46 +139,75 @@ def _server_step(job: dict, versions: list[str]) -> Optional[subprocess.Popen]:
     # Check if all versions already tested (globally, across all jobs with same commit)
     tested_versions = database.get_tested_versions_for_commit(job["commit_hash"])
     remaining = [v for v in versions if v not in tested_versions]
-    if not remaining:
-        logger.info("Job %s: all versions already tested, skipping server start", job_id)
-        return None
+    has_work_to_do = bool(remaining)
 
-    # Write server config
-    config_path = Path("/tmp/server.toml")
-    config_path.write_text(SERVER_CONFIG_CONTENT)
+    proxy_proc: Optional[subprocess.Popen] = None
+    pico_limbo_proc: Optional[subprocess.Popen] = None
 
-    # Write servers.dat
-    servers_dat = GAME_DIRECTORY / "servers.dat"
-    create_servers_dat(str(servers_dat), SERVER_ADDRESS)
+    # Always start the proxy if enabled (even if all tests are already done,
+    # the proxy lifecycle must be managed so it gets cleaned up properly).
+    if proxy_type and proxy_type != "none":
+        # --- Proxy mode ---
+        proxy_manager = get_proxy_manager(proxy_type)
+        if proxy_manager is None:
+            raise ValueError(f"Unknown or unsupported proxy type: {proxy_type}")
 
-    # Start PicoLimbo
-    logger.info("Job %s: starting PicoLimbo server", job_id)
-    proc = subprocess.Popen(
-        [artifact_path, "--config", str(config_path)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-    )
+        # Use a temp directory for the proxy config
+        proxy_config_dir = Path(tempfile.mkdtemp(prefix="velocity_config_"))
 
-    # Wait for "Listening on:" log line
-    deadline = time.time() + 30
-    listening = False
-    while time.time() < deadline and proc.poll() is None:
-        line = proc.stdout.readline()
-        if line:
-            logger.info("PicoLimbo: %s", line.rstrip())
-            if "Listening on:" in line:
-                listening = True
-                break
+        # Start proxy first
+        logger.info("Job %s: starting proxy (%s)", job_id, proxy_type)
+        proxy_proc = proxy_manager.start(proxy_config_dir, PICO_LIMBO_INTERNAL_PORT)
+        proxy_manager.wait_for_ready(proxy_proc)
+        logger.info("Job %s: proxy is ready", job_id)
 
-    if not listening:
-        proc.kill()
-        proc.wait()
-        raise RuntimeError("PicoLimbo did not start listening within 30 seconds")
+    if has_work_to_do:
+        # Write servers.dat (always points to the proxy port)
+        servers_dat = GAME_DIRECTORY / "servers.dat"
+        create_servers_dat(str(servers_dat), SERVER_ADDRESS)
 
-    logger.info("Job %s: PicoLimbo is listening", job_id)
-    return proc
+        if proxy_type and proxy_type != "none":
+            # PicoLimbo binds to internal port
+            config_path = Path("/tmp/server.toml")
+            config_path.write_text(SERVER_CONFIG_PROXY_CONTENT)
+        else:
+            # --- Direct mode (no proxy) ---
+            config_path = Path("/tmp/server.toml")
+            config_path.write_text(SERVER_CONFIG_CONTENT)
+
+        # Start PicoLimbo
+        logger.info("Job %s: starting PicoLimbo server", job_id)
+        pico_limbo_proc = subprocess.Popen(
+            [artifact_path, "--config", str(config_path)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+
+        # Wait for "Listening on:" log line
+        deadline = time.time() + 30
+        listening = False
+        while time.time() < deadline and pico_limbo_proc.poll() is None:
+            line = pico_limbo_proc.stdout.readline()
+            if line:
+                logger.info("PicoLimbo: %s", line.rstrip())
+                if "Listening on:" in line:
+                    listening = True
+                    break
+
+        if not listening:
+            pico_limbo_proc.kill()
+            pico_limbo_proc.wait()
+            raise RuntimeError("PicoLimbo did not start listening within 30 seconds")
+
+        logger.info("Job %s: PicoLimbo is listening", job_id)
+
+    if not has_work_to_do and not proxy_proc:
+        logger.info("Job %s: all versions already tested and no proxy", job_id)
+        return None, None
+
+    return proxy_proc, pico_limbo_proc
 
 
 def _test_step(job: dict, versions: list[str], server_proc: Optional[subprocess.Popen]) -> dict:
@@ -238,16 +281,32 @@ def _test_step(job: dict, versions: list[str], server_proc: Optional[subprocess.
     return test_results
 
 
-def _kill_server(server_proc: Optional[subprocess.Popen]) -> None:
-    """Kill the PicoLimbo server process if running."""
-    if server_proc and server_proc.poll() is None:
+def _kill_server(
+    proxy_proc: Optional[subprocess.Popen], pico_limbo_proc: Optional[subprocess.Popen]
+) -> None:
+    """Kill the PicoLimbo server and proxy processes if running.
+
+    Kills PicoLimbo first, then the proxy, in reverse order of startup.
+    """
+    # Kill PicoLimbo first
+    if pico_limbo_proc and pico_limbo_proc.poll() is None:
         logger.info("Killing PicoLimbo server")
-        server_proc.kill()
+        pico_limbo_proc.kill()
         try:
-            server_proc.wait(timeout=5)
+            pico_limbo_proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            logger.warning("Server did not terminate, forcing")
-            server_proc.kill()
+            logger.warning("PicoLimbo did not terminate, forcing")
+            pico_limbo_proc.kill()
+
+    # Then kill the proxy (if any)
+    if proxy_proc and proxy_proc.poll() is None:
+        logger.info("Killing proxy")
+        proxy_proc.kill()
+        try:
+            proxy_proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            logger.warning("Proxy did not terminate, forcing")
+            proxy_proc.kill()
 
 
 def run_job(job_id: str) -> None:
@@ -264,7 +323,11 @@ def run_job(job_id: str) -> None:
         versions = [str(v) for v in ALL_VERSIONS]
         database.update_job(job_id, versions=json.dumps(versions))
 
-    server_proc = None
+    proxy_type = job.get("proxy", "none") or "none"
+    logger.info("Job %s: proxy_type=%r", job_id, proxy_type)
+
+    proxy_proc: Optional[subprocess.Popen] = None
+    pico_limbo_proc: Optional[subprocess.Popen] = None
 
     try:
         # --- Build step ---
@@ -284,12 +347,12 @@ def run_job(job_id: str) -> None:
         # --- Server step ---
         # Re-fetch job in case artifact_path was just set
         job = database.get_job_by_id(job_id)
-        server_proc = _server_step(job, versions)
+        proxy_proc, pico_limbo_proc = _server_step(job, versions, proxy_type)
 
         # --- Test step ---
         _update_job(job_id, current_step="testing")
         job = database.get_job_by_id(job_id)
-        test_results = _test_step(job, versions, server_proc)
+        test_results = _test_step(job, versions, pico_limbo_proc)
 
         # --- Done ---
         _update_job(
@@ -309,4 +372,4 @@ def run_job(job_id: str) -> None:
             error_message=str(e),
         )
     finally:
-        _kill_server(server_proc)
+        _kill_server(proxy_proc, pico_limbo_proc)

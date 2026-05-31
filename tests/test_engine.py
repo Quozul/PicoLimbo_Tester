@@ -512,7 +512,7 @@ class TestCreateJob:
         mock_resolve.assert_called_once_with(mock_repo_path, ref)
         mock_db_create.assert_called_once_with(
             repo_url, ref, "Quozul",
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", versions
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", versions, "none"
         )
 
     def test_creates_job_with_empty_versions_when_none(self):
@@ -534,7 +534,7 @@ class TestCreateJob:
         mock_resolve.assert_called_once_with(mock_repo_path, ref)
         mock_db_create.assert_called_once_with(
             repo_url, ref, "Quozul",
-            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", []
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", [], "none"
         )
 
     def test_creates_job_with_versions_list(self):
@@ -557,5 +557,5 @@ class TestCreateJob:
         mock_resolve.assert_called_once_with(mock_repo_path, ref)
         mock_db_create.assert_called_once_with(
             repo_url, ref, "Quozul",
-            "cccccccccccccccccccccccccccccccccccccccc", versions
+            "cccccccccccccccccccccccccccccccccccccccc", versions, "none"
         )
