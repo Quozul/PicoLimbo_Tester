@@ -33,6 +33,8 @@ def _ensure_db() -> None:
                 error_message TEXT,
                 eta_seconds INTEGER,
                 proxy TEXT NOT NULL DEFAULT 'none',
+                forwarding_method TEXT NOT NULL DEFAULT 'modern',
+                forwarding_secret TEXT NOT NULL DEFAULT 'sup3r-s3cr3t',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
@@ -42,6 +44,15 @@ def _ensure_db() -> None:
             conn.execute("ALTER TABLE jobs ADD COLUMN proxy TEXT NOT NULL DEFAULT 'none'")
         except sqlite3.OperationalError:
             # Column already exists
+            pass
+        # Migration: add forwarding columns
+        try:
+            conn.execute("ALTER TABLE jobs ADD COLUMN forwarding_method TEXT NOT NULL DEFAULT 'modern'")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE jobs ADD COLUMN forwarding_secret TEXT NOT NULL DEFAULT 'sup3r-s3cr3t'")
+        except sqlite3.OperationalError:
             pass
         conn.commit()
 
@@ -70,6 +81,8 @@ def create_job(
     commit_hash: str,
     versions: list[str],
     proxy: str = "none",
+    forwarding_method: str = "modern",
+    forwarding_secret: str = "sup3r-s3cr3t",
 ) -> dict:
     """Create a new job. Raises sqlite3.IntegrityError if duplicate."""
     now = _now_iso()
@@ -77,10 +90,10 @@ def create_job(
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO jobs (job_id, repo_url, ref, owner, commit_hash, status, current_step, versions, test_results, error_message, eta_seconds, proxy, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 'queued', NULL, ?, '{}', NULL, NULL, ?, ?, ?)
+            INSERT INTO jobs (job_id, repo_url, ref, owner, commit_hash, status, current_step, versions, test_results, error_message, eta_seconds, proxy, forwarding_method, forwarding_secret, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'queued', NULL, ?, '{}', NULL, NULL, ?, ?, ?, ?, ?)
             """,
-            (job_id, repo_url, ref, owner, commit_hash, json.dumps(versions), proxy, now, now),
+            (job_id, repo_url, ref, owner, commit_hash, json.dumps(versions), proxy, forwarding_method, forwarding_secret, now, now),
         )
         conn.commit()
     return get_job_by_id(job_id)
@@ -215,6 +228,16 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
         result["proxy"] = row["proxy"]
     except KeyError:
         result["proxy"] = "none"
+    # Read forwarding_method
+    try:
+        result["forwarding_method"] = row["forwarding_method"]
+    except KeyError:
+        result["forwarding_method"] = "modern"
+    # Read forwarding_secret
+    try:
+        result["forwarding_secret"] = row["forwarding_secret"]
+    except KeyError:
+        result["forwarding_secret"] = "sup3r-s3cr3t"
     return result
 
 

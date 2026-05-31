@@ -11,6 +11,8 @@ export const JobCreateSchema = z.object({
   ref: z.string().min(1).optional().default("master"),
   versions: z.array(z.string()).nullable().optional(),
   proxy: z.string().optional().default("none"),
+  forwarding_method: z.string().optional().default("modern"),
+  forwarding_secret: z.string().optional().default("sup3r-s3cr3t"),
 })
 
 export const TestResultSchema = z.object({
@@ -50,7 +52,6 @@ export type JobCreateInput = z.infer<typeof JobCreateSchema>
 export const ProxyOptions = [
   { value: "none", label: "None" },
   { value: "velocity", label: "Velocity" },
-  { value: "bungeecord", label: "BungeeCord (coming soon)" },
 ] as const
 export type JobInfo = z.infer<typeof JobInfoSchema>
 export type TestResult = z.infer<typeof TestResultSchema>

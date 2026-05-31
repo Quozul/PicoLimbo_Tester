@@ -25,6 +25,14 @@ class JobCreate(BaseModel):
         default="none",
         description="Proxy type: none, velocity, bungeecord",
     )
+    forwarding_method: str = Field(
+        default="modern",
+        description="Velocity player-info-forwarding-mode: none, legacy, bungeeguard, modern",
+    )
+    forwarding_secret: str = Field(
+        default="sup3r-s3cr3t",
+        description="Velocity forwarding secret file content",
+    )
 
 
 class TestResult(BaseModel):

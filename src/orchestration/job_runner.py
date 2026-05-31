@@ -26,9 +26,6 @@ SECONDS_PER_VERSION = 90
 # PicoLimbo config for direct (no-proxy) mode
 SERVER_CONFIG_CONTENT = 'bind = "0.0.0.0:25565"\n'
 
-# PicoLimbo config for proxy mode (binds to internal port)
-SERVER_CONFIG_PROXY_CONTENT = 'bind = "127.0.0.1:30066"\n'
-
 # servers.dat address (must match server bind)
 SERVER_ADDRESS = "127.0.0.1:25565"
 
@@ -120,6 +117,34 @@ def _build_step(job: dict) -> tuple[bool, str]:
     return False, artifact_path_str
 
 
+# Map Velocity forwarding methods to PicoLimbo forwarding methods
+_VELOCITY_TO_PICOLIMBO_METHOD = {
+    "none": "NONE",
+    "legacy": "LEGACY",
+    "bungeeguard": "BUNGEE_GUARD",
+    "modern": "MODERN",
+}
+
+
+def _generate_pico_limbo_config(proxy_type: str, forwarding_method: str = "modern", forwarding_secret: str = "sup3r-s3cr3t") -> str:
+    """Generate PicoLimbo server.toml content.
+
+    For proxy mode, includes the [forwarding] section with the appropriate method.
+    """
+    if proxy_type and proxy_type != "none":
+        lines = [f'bind = "127.0.0.1:{PICO_LIMBO_INTERNAL_PORT}"']
+        method = _VELOCITY_TO_PICOLIMBO_METHOD.get(forwarding_method, "MODERN")
+        lines.append(f'\n[forwarding]')
+        lines.append(f'method = "{method}"')
+        if forwarding_method == "bungeeguard":
+            lines.append(f'tokens = ["{forwarding_secret}"]')
+        else:
+            lines.append(f'secret = "{forwarding_secret}"')
+        return "\n".join(lines)
+    else:
+        return SERVER_CONFIG_CONTENT
+
+
 def _server_step(
     job: dict, versions: list[str], proxy_type: str = "none"
 ) -> tuple[Optional[subprocess.Popen], Optional[subprocess.Popen]]:
@@ -138,6 +163,10 @@ def _server_step(
     proxy_proc: Optional[subprocess.Popen] = None
     pico_limbo_proc: Optional[subprocess.Popen] = None
 
+    # Extract forwarding config from job
+    forwarding_method = job.get("forwarding_method", "modern")
+    forwarding_secret = job.get("forwarding_secret", "sup3r-s3cr3t")
+
     # --- Proxy mode ---
     if proxy_type and proxy_type != "none":
         proxy_manager = get_proxy_manager(proxy_type)
@@ -149,7 +178,12 @@ def _server_step(
 
         # Start proxy first
         logger.info("Job %s: starting proxy (%s)", job_id, proxy_type)
-        proxy_proc = proxy_manager.start(proxy_config_dir, PICO_LIMBO_INTERNAL_PORT)
+        proxy_proc = proxy_manager.start(
+            proxy_config_dir,
+            PICO_LIMBO_INTERNAL_PORT,
+            forwarding_method=forwarding_method,
+            forwarding_secret=forwarding_secret,
+        )
         proxy_manager.wait_for_ready(proxy_proc)
         logger.info("Job %s: proxy is ready", job_id)
 
@@ -157,14 +191,9 @@ def _server_step(
     servers_dat = GAME_DIRECTORY / "servers.dat"
     create_servers_dat(str(servers_dat), SERVER_ADDRESS)
 
-    if proxy_type and proxy_type != "none":
-        # PicoLimbo binds to internal port
-        config_path = Path("/tmp/server.toml")
-        config_path.write_text(SERVER_CONFIG_PROXY_CONTENT)
-    else:
-        # --- Direct mode (no proxy) ---
-        config_path = Path("/tmp/server.toml")
-        config_path.write_text(SERVER_CONFIG_CONTENT)
+    # Write PicoLimbo config with forwarding section if using a proxy
+    config_path = Path("/tmp/server.toml")
+    config_path.write_text(_generate_pico_limbo_config(proxy_type, forwarding_method, forwarding_secret))
 
     # Start PicoLimbo
     logger.info("Job %s: starting PicoLimbo server", job_id)

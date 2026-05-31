@@ -111,21 +111,28 @@ class VelocityProxyManager(ProxyManager):
         logger.info("Downloaded Velocity jar: %s", jar_path)
         return jar_path
 
-    def start(self, config_dir: Path, pico_limbo_port: int) -> Popen:
+    def start(self, config_dir: Path, pico_limbo_port: int, forwarding_method: str = "modern", forwarding_secret: str = "sup3r-s3cr3t") -> Popen:
         """Start the Velocity proxy process.
 
         Args:
             config_dir: Directory where velocity.toml will be written.
             pico_limbo_port: Port that PicoLimbo is running on.
+            forwarding_method: Player info forwarding mode (none, legacy, bungeeguard, modern).
+            forwarding_secret: Secret for forwarding authentication.
 
         Returns:
             The running Velocity process.
         """
         # Generate and write config
         config_path = config_dir / VELOCITY_CONFIG_FILENAME
-        config_content = self._generate_config(pico_limbo_port)
+        config_content = self._generate_config(pico_limbo_port, forwarding_method, forwarding_secret)
         config_path.write_text(config_content)
         logger.info("Wrote Velocity config to %s", config_path)
+
+        # Write forwarding secret file
+        secret_path = config_dir / "forwarding.secret"
+        secret_path.write_text(forwarding_secret)
+        logger.info("Wrote Velocity forwarding secret to %s", secret_path)
 
         jar_path = self.download_if_needed()
         logger.info(
@@ -209,11 +216,13 @@ class VelocityProxyManager(ProxyManager):
             f"Velocity did not become ready within {timeout} seconds"
         )
 
-    def config_template(self, pico_limbo_port: int) -> dict:
+    def config_template(self, pico_limbo_port: int, forwarding_method: str = "modern", forwarding_secret: str = "sup3r-s3cr3t") -> dict:
         """Returns config values for Velocity.
 
         Args:
             pico_limbo_port: Port that PicoLimbo is running on.
+            forwarding_method: Player info forwarding mode (none, legacy, bungeeguard, modern).
+            forwarding_secret: Secret for forwarding authentication.
 
         Returns:
             Dict of configuration values for the proxy.
@@ -221,7 +230,7 @@ class VelocityProxyManager(ProxyManager):
         return {
             "bind": "0.0.0.0:25565",
             "online_mode": False,
-            "player_info_forwarding_mode": "NONE",
+            "player_info_forwarding_mode": forwarding_method.upper(),
             "servers": {
                 "limbo": f"127.0.0.1:{pico_limbo_port}",
                 "try": ["limbo"],
@@ -248,16 +257,18 @@ class VelocityProxyManager(ProxyManager):
             return f'"{escaped}"'
         return str(value)
 
-    def _generate_config(self, pico_limbo_port: int) -> str:
+    def _generate_config(self, pico_limbo_port: int, forwarding_method: str = "modern", forwarding_secret: str = "sup3r-s3cr3t") -> str:
         """Generate a TOML config for Velocity.
 
         Args:
             pico_limbo_port: Port that PicoLimbo is running on.
+            forwarding_method: Player info forwarding mode.
+            forwarding_secret: Secret for forwarding authentication.
 
         Returns:
             TOML configuration string.
         """
-        config = self.config_template(pico_limbo_port)
+        config = self.config_template(pico_limbo_port, forwarding_method, forwarding_secret)
         return (
             f'bind = {self._toml_value(config["bind"])}\n'
             f'online-mode = {self._toml_value(config["online_mode"])}\n'

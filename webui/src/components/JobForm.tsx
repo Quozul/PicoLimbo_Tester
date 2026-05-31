@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { VersionSelector } from "@/components/VersionSelector"
+import { VelocityConfigDialog } from "@/components/VelocityConfigDialog"
 import {
   createJob,
   type JobCreateInput,
@@ -17,7 +18,7 @@ import {
   ProxyOptions,
 } from "@/lib/api"
 import { ALL_VERSION_LABELS } from "@/lib/versions"
-import { Loader2, Play, Server } from "lucide-react"
+import { Loader2, Play, Server, Settings2 } from "lucide-react"
 
 interface JobFormProps {
   onJobCreated: (job: JobInfo) => void
@@ -29,6 +30,9 @@ export function JobForm({ onJobCreated }: JobFormProps) {
   )
   const [ref, setRef] = useState("master")
   const [proxy, setProxy] = useState("none")
+  const [forwardingMethod, setForwardingMethod] = useState("modern")
+  const [forwardingSecret, setForwardingSecret] = useState("sup3r-s3cr3t")
+  const [showConfigDialog, setShowConfigDialog] = useState(false)
   const [selectedVersions, setSelectedVersions] = useState<Set<string>>(
     new Set()
   )
@@ -54,6 +58,8 @@ export function JobForm({ onJobCreated }: JobFormProps) {
           ref: ref || "master",
           versions,
           proxy,
+          forwarding_method: forwardingMethod,
+          forwarding_secret: forwardingSecret,
         }
 
         const job = await createJob(input)
@@ -64,7 +70,7 @@ export function JobForm({ onJobCreated }: JobFormProps) {
         setLoading(false)
       }
     },
-    [repoUrl, ref, proxy, selectedVersions, onJobCreated]
+    [repoUrl, ref, proxy, forwardingMethod, forwardingSecret, selectedVersions, onJobCreated]
   )
 
   return (
@@ -120,6 +126,30 @@ export function JobForm({ onJobCreated }: JobFormProps) {
           </SelectContent>
         </Select>
       </div>
+
+      {/* Velocity Config Button (only visible when Velocity is selected) */}
+      {proxy === "velocity" && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-full gap-2 text-xs"
+          onClick={() => setShowConfigDialog(true)}
+        >
+          <Settings2 className="size-3" />
+          Configure Velocity Forwarding
+        </Button>
+      )}
+
+      {/* Velocity Config Dialog */}
+      <VelocityConfigDialog
+        open={showConfigDialog}
+        onOpenChange={setShowConfigDialog}
+        forwardingMethod={forwardingMethod}
+        onForwardingMethodChange={setForwardingMethod}
+        forwardingSecret={forwardingSecret}
+        onForwardingSecretChange={setForwardingSecret}
+      />
 
       {/* Version Selector */}
       <div className="flex grow flex-col gap-1.5 overflow-y-hidden">

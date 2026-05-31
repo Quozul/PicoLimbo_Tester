@@ -140,6 +140,8 @@ def create_job(
     ref: str,
     versions: Optional[list[str]] = None,
     proxy: str = "none",
+    forwarding_method: str = "modern",
+    forwarding_secret: str = "sup3r-s3cr3t",
 ) -> dict:
     """Always create a new job.
 
@@ -162,7 +164,10 @@ def create_job(
     commit_hash = resolve_commit(repo_path, ref)
 
     # Always create a new job - step-level logic handles skipping
-    job = database.create_job(repo_url, ref, owner, commit_hash, versions or [], proxy)
+    job = database.create_job(
+        repo_url, ref, owner, commit_hash, versions or [],
+        proxy, forwarding_method, forwarding_secret,
+    )
     logger.info("Created new job %s for %s@%s", job["job_id"], repo_url, ref)
     return job
 

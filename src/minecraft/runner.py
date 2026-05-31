@@ -243,7 +243,7 @@ def test_single_version(
         window_id = wait_for_game(version)
         virtual_device.set_window(window_id)
         log_to_multiplayer(version, virtual_device, window_id)
-        time.sleep(5)  # wait for the player to be logged in
+        time.sleep(30)  # wait for the player to be logged in
         screenshot_path = capture_screenshot(
             version, commit_hash, window_id, screenshots_dir
         )
