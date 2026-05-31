@@ -150,3 +150,7 @@ The following proxy configurations are planned but not yet implemented:
 - **No per-version status tracking** — The `test_results` field is a flat dict. There's no way to independently track which versions succeeded or failed within a multi-version job.
 - **Duplicated response formatting** — The `test_results` dict-to-list conversion is repeated across multiple API endpoints in `main.py`.
 - **Static database schema** — No migration system; adding new columns requires manual intervention.
+
+# AI Disclosure
+
+This project is largely vibe-coded. This is mostly fine as this is for internal use only.

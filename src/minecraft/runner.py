@@ -37,8 +37,8 @@ def _is_lwjgl2_version(version: str) -> bool:
 
 
 def parse_window_info(window_text: str) -> dict | None:
-    position_match = re.search(r"Position:\s*(\d+),(\d+)", window_text)
-    geometry_match = re.search(r"Geometry:\s*(\d+)x(\d+)", window_text)
+    position_match = re.search(r"Position:\s*(\d+),\s*(\d+)", window_text)
+    geometry_match = re.search(r"Geometry:\s*(\d+)\s*x\s*(\d+)", window_text)
 
     if not (position_match and geometry_match):
         return None

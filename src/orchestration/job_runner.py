@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-import database
+from .. import database
 from .. import models
 from ..builder import engine
 from ..minecraft.env import create_servers_dat
