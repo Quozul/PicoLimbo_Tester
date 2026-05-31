@@ -507,14 +507,11 @@ class TestJobRunnerProxyIntegration:
         mock_job["commit_hash"] = "abc123"
 
         with patch.object(
-            job_runner.database, "get_tested_versions_for_commit", return_value=[]
+            job_runner, "_update_job", return_value={}
         ):
-            with patch.object(
-                job_runner, "_update_job", return_value={}
+            with patch(
+                "src.orchestration.job_runner.create_servers_dat"
             ):
-                with patch(
-                    "src.orchestration.job_runner.create_servers_dat"
-                ):
                     with patch("subprocess.Popen") as mock_popen:
                         mock_proc = MagicMock()
                         mock_proc.poll.return_value = None
@@ -554,17 +551,14 @@ class TestJobRunnerProxyIntegration:
         mock_pico.poll.return_value = None
         mock_pico.stdout.readline.return_value = "Listening on: 127.0.0.1:30066\n"
 
-        with patch.object(
-            job_runner.database, "get_tested_versions_for_commit", return_value=[]
+        with patch(
+            "src.orchestration.job_runner.create_servers_dat"
         ):
             with patch(
-                "src.orchestration.job_runner.create_servers_dat"
+                "src.orchestration.job_runner.get_proxy_manager",
+                return_value=proxy_manager,
             ):
-                with patch(
-                    "src.orchestration.job_runner.get_proxy_manager",
-                    return_value=proxy_manager,
-                ):
-                    with patch("subprocess.Popen") as mock_popen:
+                with patch("subprocess.Popen") as mock_popen:
                         mock_popen.return_value = mock_pico
 
                         proxy_proc, pico_proc = job_runner._server_step(
@@ -619,19 +613,15 @@ class TestJobRunnerProxyIntegration:
                     with patch.object(job_runner, "_server_step") as mock_server:
                         mock_server.return_value = (MagicMock(), MagicMock())
                         with patch.object(job_runner, "_test_step", return_value={}):
-                            # Patch all other DB calls to return safe values
-                            with patch.object(job_runner.database, "get_tested_versions_for_commit", return_value=[]):
-                                with patch.object(job_runner.database, "get_latest_test_results_for_commit", return_value=None):
-                                    # run_job should call _server_step with proxy_type="velocity"
-                                    try:
-                                        job_runner.run_job("job-1")
-                                    except Exception:
-                                        # We expect some failures from missing real artifacts,
-                                        # but we can still check _server_step was called correctly
-                                        pass
+                            # run_job should call _server_step with proxy_type="velocity"
+                            try:
+                                job_runner.run_job("job-1")
+                            except Exception:
+                                # We expect some failures from missing real artifacts,
+                                # but we can still check _server_step was called correctly
+                                pass
 
-                                    # Verify _server_step was called with correct proxy_type
-                                    if mock_server.called:
-                                        call_args = mock_server.call_args
-                                        # positional args: (job, versions, proxy_type)
-                                        assert call_args[0][2] == "velocity"
+                            # Verify _server_step was called with correct proxy_type
+                            if mock_server.called:
+                                call_args = mock_server.call_args
+                                assert call_args[0][2] == "velocity"

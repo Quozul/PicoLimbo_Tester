@@ -20,9 +20,15 @@ export function App() {
   return (
     <div className="flex h-dvh w-screen flex-col bg-background text-foreground">
       {/* Top bar */}
-      <header className="flex items-center justify-between border-b border-border px-4 py-2 bg-background">
+      <header className="flex items-center justify-between border-b border-border bg-background px-4 py-2">
         <div className="flex items-center gap-2">
-          <svg className="size-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            className="size-5 text-primary"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
           </svg>
           <h1 className="text-sm font-medium">
@@ -39,7 +45,7 @@ export function App() {
       {/* Main content — 3 columns */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left column — Job Creation */}
-        <div className="w-[400px] min-w-[320px] max-w-[480px] border-r border-border flex flex-col overflow-hidden">
+        <div className="flex w-[400px] max-w-[480px] min-w-[320px] flex-col overflow-hidden border-r border-border">
           <JobCreation onJobCreated={handleJobCreated} />
         </div>
 
@@ -49,11 +55,8 @@ export function App() {
         </div>
 
         {/* Right column — Job History + Job Progress */}
-        <div className="w-[420px] min-w-[340px] max-w-[500px] border-l border-border flex flex-col overflow-hidden">
-          <JobInfoPanel
-            activeJob={latestJob}
-            onSelectJob={handleSelectJob}
-          />
+        <div className="flex w-[420px] max-w-[500px] min-w-[340px] flex-col overflow-hidden border-l border-border">
+          <JobInfoPanel activeJob={latestJob} onSelectJob={handleSelectJob} />
         </div>
       </div>
     </div>

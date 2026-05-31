@@ -11,11 +11,11 @@ interface JobHistoryListProps {
 function getStatusIcon(status: string) {
   switch (status) {
     case "queued":
-      return <Loader2 className="size-3 text-muted-foreground animate-spin" />
+      return <Loader2 className="size-3 animate-spin text-muted-foreground" />
     case "building":
-      return <Loader2 className="size-3 text-primary animate-spin" />
+      return <Loader2 className="size-3 animate-spin text-primary" />
     case "testing":
-      return <Loader2 className="size-3 text-amber-500 animate-spin" />
+      return <Loader2 className="size-3 animate-spin text-amber-500" />
     case "finished":
       return <CheckCircle2 className="size-3 text-green-500" />
     case "failed":
@@ -60,14 +60,20 @@ function formatTimeAgo(dateString: string): string {
   return `${days}d ago`
 }
 
-export function JobHistoryList({ activeJob, onSelectJob }: JobHistoryListProps) {
+export function JobHistoryList({
+  activeJob,
+  onSelectJob,
+}: JobHistoryListProps) {
   const [jobs, setJobs] = useState<JobInfo[]>([])
   const [loading, setLoading] = useState(true)
 
   const fetchJobs = useCallback(async () => {
     try {
       const list = await listJobs({ limit: 50 })
-      list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      list.sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      )
       setJobs(list)
       setLoading(false)
     } catch {
@@ -85,52 +91,56 @@ export function JobHistoryList({ activeJob, onSelectJob }: JobHistoryListProps) 
     (job: JobInfo) => {
       onSelectJob(job)
     },
-    [onSelectJob],
+    [onSelectJob]
   )
 
   return (
     <div className="flex-shrink-0 border-border px-4 py-3">
-      <div className="flex items-center justify-between mb-2">
+      <div className="mb-2 flex items-center justify-between">
         <h2 className="text-xs font-medium">Job History</h2>
         <span className="text-[10px] text-muted-foreground">
           {jobs.length} jobs
         </span>
       </div>
-      <div className="flex flex-col gap-1 max-h-[200px] overflow-y-auto scrollbar-thin">
+      <div className="flex max-h-[200px] scrollbar-thin flex-col gap-1 overflow-y-auto">
         {loading ? (
           <div className="py-4 text-center">
-            <Loader2 className="size-4 animate-spin text-muted-foreground mx-auto" />
+            <Loader2 className="mx-auto size-4 animate-spin text-muted-foreground" />
           </div>
         ) : jobs.length === 0 ? (
           <div className="py-4 text-center text-xs text-muted-foreground">
             No jobs yet
           </div>
         ) : (
-          jobs.map(job => {
+          jobs.map((job) => {
             const isLatest = job.job_id === activeJob?.job_id
-            const testResults = Object.values(job.test_results) as { passed: boolean }[]
-            const passed = testResults.filter(r => r.passed).length
-            const failed = testResults.filter(r => !r.passed).length
+            const testResults = Object.values(job.test_results) as {
+              passed: boolean
+            }[]
+            const passed = testResults.filter((r) => r.passed).length
+            const failed = testResults.filter((r) => !r.passed).length
 
             return (
               <div
                 key={job.job_id}
                 onClick={() => handleSelect(job)}
                 className={cn(
-                  "flex items-center gap-2 rounded-none border px-2.5 py-1.5 text-xs cursor-pointer transition-all",
+                  "flex cursor-pointer items-center gap-2 rounded-none border px-2.5 py-1.5 text-xs transition-all",
                   isLatest
                     ? "border-primary bg-primary/5"
                     : "border-border hover:bg-muted/50",
-                  job.status === "failed" ? "border-destructive/30" : "",
+                  job.status === "failed" ? "border-destructive/30" : ""
                 )}
               >
                 {getStatusIcon(job.status)}
-                <div className="flex-1 min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="font-mono truncate text-[10px]">
+                    <span className="truncate font-mono text-[10px]">
                       {job.job_id.slice(0, 8)}
                     </span>
-                    <span className={cn("text-[10px]", getStatusColor(job.status))}>
+                    <span
+                      className={cn("text-[10px]", getStatusColor(job.status))}
+                    >
                       {job.status}
                     </span>
                   </div>

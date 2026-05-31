@@ -10,7 +10,12 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { VersionSelector } from "@/components/VersionSelector"
-import { createJob, type JobCreateInput, type JobInfo, ProxyOptions } from "@/lib/api"
+import {
+  createJob,
+  type JobCreateInput,
+  type JobInfo,
+  ProxyOptions,
+} from "@/lib/api"
 import { ALL_VERSION_LABELS } from "@/lib/versions"
 import { Loader2, Play, Server } from "lucide-react"
 
@@ -19,10 +24,14 @@ interface JobFormProps {
 }
 
 export function JobForm({ onJobCreated }: JobFormProps) {
-  const [repoUrl, setRepoUrl] = useState("https://github.com/Quozul/PicoLimbo.git")
+  const [repoUrl, setRepoUrl] = useState(
+    "https://github.com/Quozul/PicoLimbo.git"
+  )
   const [ref, setRef] = useState("master")
   const [proxy, setProxy] = useState("none")
-  const [selectedVersions, setSelectedVersions] = useState<Set<string>>(new Set())
+  const [selectedVersions, setSelectedVersions] = useState<Set<string>>(
+    new Set()
+  )
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -59,7 +68,10 @@ export function JobForm({ onJobCreated }: JobFormProps) {
   )
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4 h-full overflow-hidden">
+    <form
+      onSubmit={handleSubmit}
+      className="flex h-full flex-col gap-4 overflow-hidden"
+    >
       {/* Repo URL */}
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="repo-url" className="text-xs">
@@ -70,7 +82,7 @@ export function JobForm({ onJobCreated }: JobFormProps) {
           type="url"
           placeholder="https://github.com/Quozul/PicoLimbo.git"
           value={repoUrl}
-          onChange={e => setRepoUrl(e.target.value)}
+          onChange={(e) => setRepoUrl(e.target.value)}
         />
       </div>
 
@@ -83,7 +95,7 @@ export function JobForm({ onJobCreated }: JobFormProps) {
           id="ref"
           placeholder="master"
           value={ref}
-          onChange={e => setRef(e.target.value)}
+          onChange={(e) => setRef(e.target.value)}
         />
       </div>
 
@@ -100,7 +112,7 @@ export function JobForm({ onJobCreated }: JobFormProps) {
             <SelectValue placeholder="None" />
           </SelectTrigger>
           <SelectContent>
-            {ProxyOptions.map(option => (
+            {ProxyOptions.map((option) => (
               <SelectItem key={option.value} value={option.value}>
                 {option.label}
               </SelectItem>
@@ -110,16 +122,17 @@ export function JobForm({ onJobCreated }: JobFormProps) {
       </div>
 
       {/* Version Selector */}
-      <div className="flex flex-col gap-1.5 overflow-y-hidden grow">
+      <div className="flex grow flex-col gap-1.5 overflow-y-hidden">
         <Label className="text-xs">
           Versions{" "}
-          <span className="text-muted-foreground font-normal">
+          <span className="font-normal text-muted-foreground">
             ({selectedVersions.size} selected)
           </span>
         </Label>
         <VersionSelector
           selected={selectedVersions}
           onChange={setSelectedVersions}
+          proxy={proxy as "none" | "velocity" | "bungeecord"}
         />
       </div>
 
@@ -131,11 +144,7 @@ export function JobForm({ onJobCreated }: JobFormProps) {
       )}
 
       {/* Submit */}
-      <Button
-        type="submit"
-        disabled={loading}
-        className="mt-1 gap-2"
-      >
+      <Button type="submit" disabled={loading} className="mt-1 gap-2">
         {loading ? (
           <>
             <Loader2 className="size-3.5 animate-spin" />

@@ -2,12 +2,23 @@
  * Minecraft version data derived from src/versions.py
  */
 
+export type ProxyType = "none" | "velocity" | "bungeecord"
+
+/**
+ * Warning info for versions known to have connectivity issues.
+ * onlyWithProxy: if true, the warning only applies when using that proxy type
+ */
+export interface VersionWarning {
+  onlyWithProxy: ProxyType | null
+}
+
 export interface MinecraftVersion {
   major: number
   minor: number
   patch: number
   protocolVersion: number
   label: string
+  warning?: VersionWarning
 }
 
 export const ALL_VERSIONS: MinecraftVersion[] = [
@@ -68,8 +79,22 @@ export const ALL_VERSIONS: MinecraftVersion[] = [
   { major: 1, minor: 16, patch: 1, protocolVersion: 736, label: "1.16.1" },
   { major: 1, minor: 16, patch: 2, protocolVersion: 751, label: "1.16.2" },
   { major: 1, minor: 16, patch: 3, protocolVersion: 753, label: "1.16.3" },
-  { major: 1, minor: 16, patch: 4, protocolVersion: 754, label: "1.16.4" },
-  { major: 1, minor: 16, patch: 5, protocolVersion: 754, label: "1.16.5" },
+  {
+    major: 1,
+    minor: 16,
+    patch: 4,
+    protocolVersion: 754,
+    label: "1.16.4",
+    warning: { onlyWithProxy: null },
+  },
+  {
+    major: 1,
+    minor: 16,
+    patch: 5,
+    protocolVersion: 754,
+    label: "1.16.5",
+    warning: { onlyWithProxy: null },
+  },
   // 1.17.x
   { major: 1, minor: 17, patch: 0, protocolVersion: 755, label: "1.17" },
   { major: 1, minor: 17, patch: 1, protocolVersion: 756, label: "1.17.1" },
@@ -78,9 +103,30 @@ export const ALL_VERSIONS: MinecraftVersion[] = [
   { major: 1, minor: 18, patch: 1, protocolVersion: 757, label: "1.18.1" },
   { major: 1, minor: 18, patch: 2, protocolVersion: 758, label: "1.18.2" },
   // 1.19.x
-  { major: 1, minor: 19, patch: 0, protocolVersion: 759, label: "1.19" },
-  { major: 1, minor: 19, patch: 1, protocolVersion: 760, label: "1.19.1" },
-  { major: 1, minor: 19, patch: 2, protocolVersion: 760, label: "1.19.2" },
+  {
+    major: 1,
+    minor: 19,
+    patch: 0,
+    protocolVersion: 759,
+    label: "1.19",
+    warning: { onlyWithProxy: "velocity" },
+  },
+  {
+    major: 1,
+    minor: 19,
+    patch: 1,
+    protocolVersion: 760,
+    label: "1.19.1",
+    warning: { onlyWithProxy: "velocity" },
+  },
+  {
+    major: 1,
+    minor: 19,
+    patch: 2,
+    protocolVersion: 760,
+    label: "1.19.2",
+    warning: { onlyWithProxy: "velocity" },
+  },
   { major: 1, minor: 19, patch: 3, protocolVersion: 761, label: "1.19.3" },
   { major: 1, minor: 19, patch: 4, protocolVersion: 762, label: "1.19.4" },
   // 1.20.x
@@ -110,7 +156,9 @@ export const ALL_VERSIONS: MinecraftVersion[] = [
   { major: 26, minor: 1, patch: 2, protocolVersion: 775, label: "26.1.2" },
 ]
 
-export const GROUPED_VERSIONS = ALL_VERSIONS.reduce<Record<string, MinecraftVersion[]>>((acc, v) => {
+export const GROUPED_VERSIONS = ALL_VERSIONS.reduce<
+  Record<string, MinecraftVersion[]>
+>((acc, v) => {
   const group = v.major === 1 ? `1.${v.minor}` : `${v.major}.${v.minor}`
   if (!acc[group]) acc[group] = []
   acc[group].push(v)
@@ -118,10 +166,10 @@ export const GROUPED_VERSIONS = ALL_VERSIONS.reduce<Record<string, MinecraftVers
 }, {})
 
 export const VERSION_GROUPS = Object.keys(GROUPED_VERSIONS).sort((a, b) => {
-  const [aMajor, aMinor] = a.split('.').map(Number)
-  const [bMajor, bMinor] = b.split('.').map(Number)
+  const [aMajor, aMinor] = a.split(".").map(Number)
+  const [bMajor, bMinor] = b.split(".").map(Number)
   if (aMajor !== bMajor) return aMajor - bMajor
   return aMinor - bMinor
 })
 
-export const ALL_VERSION_LABELS = ALL_VERSIONS.map(v => v.label)
+export const ALL_VERSION_LABELS = ALL_VERSIONS.map((v) => v.label)

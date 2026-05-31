@@ -8,8 +8,8 @@ interface JobCreationProps {
 
 export function JobCreation({ onJobCreated }: JobCreationProps) {
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-border flex-shrink-0">
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="flex flex-shrink-0 items-center gap-2 border-b border-border px-4 py-3">
         <LayoutPanelLeft className="size-3.5 text-muted-foreground" />
         <h2 className="text-xs font-medium">Create Job</h2>
       </div>

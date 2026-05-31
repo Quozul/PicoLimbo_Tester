@@ -13,6 +13,7 @@ import minecraft_launcher_lib
 from .env import create_servers_dat, create_options_txt
 from .input import VirtualInputController
 from .wait_for import wait_for_screen_region
+from PIL import ImageGrab
 from ..versions import Version
 
 logger = logging.getLogger(__name__)
@@ -197,45 +198,24 @@ def empty_directory(directory: str) -> None:
             logger.error("Failed to delete %s. Reason: %s", file_path, e)
 
 
-def get_latest_screenshot(directory: str) -> str:
-    if not os.path.exists(directory):
-        raise FileNotFoundError(f"Screenshot directory {directory} does not exist.")
-    files = [
-        f for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f))
-    ]
-    if not files:
-        raise FileNotFoundError("No screenshots found in the directory.")
-    return os.path.join(
-        directory,
-        max(files, key=lambda f: os.path.getmtime(os.path.join(directory, f))),
-    )
-
-
-def test_screenshot(
+def capture_screenshot(
     version: str,
     commit_hash: str,
-    virtual_device: VirtualInputController,
+    window_id: str,
     screenshots_dir: str,
 ) -> str:
-    screenshot_directory = os.path.join(GAME_DIRECTORY, "screenshots")
-    empty_directory(screenshot_directory)
-
-    virtual_device.press_f3()
-    time.sleep(0.5)
-    virtual_device.press_f2()
-    time.sleep(0.5)
+    # Capture the full screen to avoid any cropping from bbox rounding
+    # or window-manager effects that can cut off the top of the game window.
+    current_image = ImageGrab.grab().convert("RGB")
 
     os.makedirs(screenshots_dir, exist_ok=True)
 
-    latest_screenshot = get_latest_screenshot(screenshot_directory)
-    basename = os.path.basename(latest_screenshot)
-    # Include commit hash in the filename so screenshots from different commits don't collide
+    # Include commit hash in the filename so screenshots from different
+    # commits don't collide.
     commit_short = commit_hash[:8]
-    dest_path = os.path.join(screenshots_dir, f"{version}_{commit_short}_{basename}")
-    shutil.move(
-        latest_screenshot,
-        dest_path,
-    )
+    basename = f"{version}_{commit_short}_screenshot.png"
+    dest_path = os.path.join(screenshots_dir, basename)
+    current_image.save(dest_path)
     logger.info("Saved screenshot to %s", dest_path)
     return dest_path
 
@@ -263,9 +243,9 @@ def test_single_version(
         window_id = wait_for_game(version)
         virtual_device.set_window(window_id)
         log_to_multiplayer(version, virtual_device, window_id)
-        time.sleep(2)  # wait for the player to be logged in
-        screenshot_path = test_screenshot(
-            version, commit_hash, virtual_device, screenshots_dir
+        time.sleep(5)  # wait for the player to be logged in
+        screenshot_path = capture_screenshot(
+            version, commit_hash, window_id, screenshots_dir
         )
         result["passed"] = True
         result["screenshot_path"] = screenshot_path

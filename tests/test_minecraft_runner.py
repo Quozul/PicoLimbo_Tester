@@ -7,8 +7,8 @@ import pytest
 
 from src.minecraft.runner import (
     _is_lwjgl2_version,
+    capture_screenshot,
     empty_directory,
-    get_latest_screenshot,
     parse_window_info,
 )
 
@@ -127,37 +127,99 @@ class TestEmptyDirectory:
         assert list(tmp_path.iterdir()) == []
 
 
-class TestGetLatestScreenshot:
-    """Tests for get_latest_screenshot."""
+class TestCaptureScreenshot:
+    """Tests for capture_screenshot – captures a window via ImageGrab."""
 
-    def test_single_file(self, tmp_path):
-        """Directory with one file returns that file."""
-        (tmp_path / "screen.png").write_bytes(b"png")
-        result = get_latest_screenshot(str(tmp_path))
-        assert result == str(tmp_path / "screen.png")
+    def test_saves_screenshot_at_window_position(self, tmp_path):
+        """Screenshot is saved to screenshots_dir with correct filename."""
+        from unittest.mock import MagicMock, patch
 
-    def test_multiple_files_returns_most_recent(self, tmp_path):
-        """Directory with multiple files returns the most recently modified."""
-        old_file = tmp_path / "old.png"
-        new_file = tmp_path / "new.png"
-        old_file.write_bytes(b"old")
-        new_file.write_bytes(b"new")
+        mock_window_info = {"x": 100, "y": 200, "width": 1024, "height": 768}
+        screenshots_dir = str(tmp_path / "screenshots")
 
-        # Make old_file older
-        old_time = time.time() - 100
-        new_time = time.time()
-        os.utime(str(old_file), (old_time, old_time))
-        os.utime(str(new_file), (new_time, new_time))
+        # ImageGrab.grab returns a mock image; .convert("RGB") returns
+        # mock_image itself so .save() is called on the same object.
+        mock_image = MagicMock()
+        mock_image.convert.return_value = mock_image
 
-        result = get_latest_screenshot(str(tmp_path))
-        assert result == str(tmp_path / "new.png")
+        with (
+            patch("src.minecraft.runner.get_window_info", return_value=mock_window_info),
+            patch("src.minecraft.runner.ImageGrab.grab", return_value=mock_image),
+            patch("os.makedirs"),
+        ):
+            result_path = capture_screenshot(
+                version="1.20.1",
+                commit_hash="aabbccdd11223344",
+                window_id="fake_window",
+                screenshots_dir=screenshots_dir,
+            )
 
-    def test_empty_directory_raises(self, tmp_path):
-        """Empty directory raises FileNotFoundError."""
-        with pytest.raises(FileNotFoundError, match="No screenshots found"):
-            get_latest_screenshot(str(tmp_path))
+        assert "1.20.1" in result_path
+        assert "aabbccdd" in result_path
+        assert result_path.endswith(".png")
 
-    def test_nonexistent_directory_raises(self):
-        """Non-existent directory raises FileNotFoundError with path."""
-        with pytest.raises(FileNotFoundError, match="does not exist"):
-            get_latest_screenshot("/tmp/nonexistent_dir_12345")
+        # Verify ImageGrab was called and .save() was called on the image
+        mock_image.save.assert_called_once()
+        captured_save_args = mock_image.save.call_args
+        assert captured_save_args[0][0] == result_path
+
+    def test_raises_on_missing_window_info(self):
+        """When get_window_info returns None, an exception is raised."""
+        from unittest.mock import MagicMock, patch
+
+        with (
+            patch("src.minecraft.runner.get_window_info", return_value=None),
+            patch("src.minecraft.runner.ImageGrab.grab"),
+        ):
+            with pytest.raises(Exception, match="Could not get window geometry"):
+                capture_screenshot(
+                    version="1.20.1",
+                    commit_hash="aabbccdd11223344",
+                    window_id="fake_window",
+                    screenshots_dir="/tmp/screenshots",
+                )
+
+    def test_captures_correct_bbox(self, tmp_path):
+        """ImageGrab.grab is called with the window's absolute bbox."""
+        from unittest.mock import MagicMock, patch
+
+        mock_window_info = {"x": 50, "y": 100, "width": 800, "height": 600}
+        mock_image = MagicMock()
+        screenshots_dir = str(tmp_path / "screenshots")
+
+        with patch("src.minecraft.runner.get_window_info", return_value=mock_window_info):
+            with patch("src.minecraft.runner.ImageGrab.grab", return_value=mock_image) as grab_mock:
+                with patch("os.makedirs"):
+                    capture_screenshot(
+                        version="1.19.3",
+                        commit_hash="deadbeef",
+                        window_id="fake_window",
+                        screenshots_dir=screenshots_dir,
+                    )
+
+        # ImageGrab.grab should be called with (x, y, x+w, y+h)
+        expected_bbox = (50, 100, 850, 700)
+        grab_mock.assert_called_once_with(bbox=expected_bbox)
+
+    def test_filename_includes_version_and_commit(self, tmp_path):
+        """The saved filename contains the version and short commit hash."""
+        from unittest.mock import MagicMock, patch
+
+        mock_window_info = {"x": 0, "y": 0, "width": 1024, "height": 768}
+        mock_image = MagicMock()
+        screenshots_dir = str(tmp_path / "screenshots")
+
+        with (
+            patch("src.minecraft.runner.get_window_info", return_value=mock_window_info),
+            patch("src.minecraft.runner.ImageGrab.grab", return_value=mock_image),
+            patch("os.makedirs"),
+        ):
+            result_path = capture_screenshot(
+                version="26.1.1",
+                commit_hash="abcdef1234567890abcdef1234567890abcdef12",
+                window_id="fake_window",
+                screenshots_dir=screenshots_dir,
+            )
+
+        expected_name = "26.1.1_abcdef12_screenshot.png"
+        assert os.path.basename(result_path) == expected_name

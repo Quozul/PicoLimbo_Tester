@@ -27,13 +27,5 @@ class VirtualInputController:
     def click(self):
         subprocess.run(["xdotool", "click", "1"], capture_output=True)
 
-    def press_f2(self):
-        self._activate()
-        subprocess.run(["xdotool", "key", "F2"], capture_output=True)
-
-    def press_f3(self):
-        self._activate()
-        subprocess.run(["xdotool", "key", "F3"], capture_output=True)
-
     def close(self):
         pass

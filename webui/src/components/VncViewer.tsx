@@ -11,7 +11,10 @@ export function VncViewer({ vncUrl }: VncViewerProps) {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const baseUrl = vncUrl || import.meta.env.VITE_VNC_URL || "http://localhost:6080/vnc.html?host=localhost&port=5900&encrypt=false"
+  const baseUrl =
+    vncUrl ||
+    import.meta.env.VITE_VNC_URL ||
+    "http://localhost:6080/vnc.html?host=localhost&port=5900&encrypt=false"
 
   const toggleFullscreen = useCallback(() => {
     if (!containerRef.current) return
@@ -37,11 +40,11 @@ export function VncViewer({ vncUrl }: VncViewerProps) {
       ref={containerRef}
       className={cn(
         "flex h-full flex-col overflow-hidden bg-muted/20",
-        isFullscreen ? "fixed inset-0 z-50" : "",
+        isFullscreen ? "fixed inset-0 z-50" : ""
       )}
     >
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-background/80 backdrop-blur">
+      <div className="flex items-center justify-between border-b border-border bg-background/80 px-3 py-2 backdrop-blur">
         <span className="text-xs font-medium text-muted-foreground">
           Live VNC Viewer
         </span>
@@ -50,7 +53,9 @@ export function VncViewer({ vncUrl }: VncViewerProps) {
             variant="ghost"
             size="icon-sm"
             onClick={() => {
-              const iframe = containerRef.current?.querySelector("iframe") as HTMLIFrameElement | null
+              const iframe = containerRef.current?.querySelector(
+                "iframe"
+              ) as HTMLIFrameElement | null
               if (iframe) iframe.src = iframe.src
             }}
             title="Refresh"
@@ -75,10 +80,10 @@ export function VncViewer({ vncUrl }: VncViewerProps) {
       </div>
 
       {/* noVNC iframe */}
-      <div className="flex-1 relative">
+      <div className="relative flex-1">
         <iframe
           src={baseUrl}
-          className="absolute inset-0 w-full h-full border-0"
+          className="absolute inset-0 h-full w-full border-0"
           title="noVNC Remote Desktop"
           allow="fullscreen"
           sandbox="allow-same-origin allow-scripts allow-popups"
@@ -87,5 +92,3 @@ export function VncViewer({ vncUrl }: VncViewerProps) {
     </div>
   )
 }
-
-

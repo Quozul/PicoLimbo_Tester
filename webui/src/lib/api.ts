@@ -3,7 +3,11 @@ import { z } from "zod"
 // ─── Zod Schemas ───────────────────────────────────────────────────────────────
 
 export const JobCreateSchema = z.object({
-  repo_url: z.string().url().optional().default("https://github.com/Quozul/PicoLimbo.git"),
+  repo_url: z
+    .string()
+    .url()
+    .optional()
+    .default("https://github.com/Quozul/PicoLimbo.git"),
   ref: z.string().min(1).optional().default("master"),
   versions: z.array(z.string()).nullable().optional(),
   proxy: z.string().optional().default("none"),
@@ -116,16 +120,21 @@ export async function listJobs(options?: {
   if (options?.limit) params.set("limit", String(options.limit))
   const query = params.toString() ? `?${params}` : ""
   const data = await request<JobInfo[]>(`GET`, `/jobs${query}`)
-  return data.map(j => JobInfoSchema.parse(j))
+  return data.map((j) => JobInfoSchema.parse(j))
 }
 
 /**
  * GET /jobs/{job_id}/screenshots
  * List all screenshots for a job.
  */
-export async function listScreenshots(jobId: string): Promise<ScreenshotItem[]> {
-  const data = await request<ScreenshotItem[]>(`GET`, `/jobs/${jobId}/screenshots`)
-  return data.map(s => ScreenshotItemSchema.parse(s))
+export async function listScreenshots(
+  jobId: string
+): Promise<ScreenshotItem[]> {
+  const data = await request<ScreenshotItem[]>(
+    `GET`,
+    `/jobs/${jobId}/screenshots`
+  )
+  return data.map((s) => ScreenshotItemSchema.parse(s))
 }
 
 /**
@@ -183,7 +192,7 @@ export function createJobPoller(
       } catch {
         // Silently ignore poll errors (e.g., network issues)
       }
-      await new Promise(resolve => setTimeout(resolve, intervalMs))
+      await new Promise((resolve) => setTimeout(resolve, intervalMs))
     }
   }
 

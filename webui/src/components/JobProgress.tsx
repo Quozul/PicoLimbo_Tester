@@ -51,9 +51,9 @@ function getStatusIcon(status: string) {
     case "queued":
       return <Clock className="size-4 text-muted-foreground" />
     case "building":
-      return <Loader2 className="size-4 text-primary animate-spin" />
+      return <Loader2 className="size-4 animate-spin text-primary" />
     case "testing":
-      return <Loader2 className="size-4 text-amber-500 animate-spin" />
+      return <Loader2 className="size-4 animate-spin text-amber-500" />
     case "finished":
       return <CheckCircle2 className="size-4 text-green-500" />
     case "failed":
@@ -97,7 +97,9 @@ function formatEta(seconds?: number | null): string {
 
 export function JobProgress({ job }: JobProgressProps) {
   const [currentJob, setCurrentJob] = useState<JobInfo>(job)
-  const [screenshotUrls, setScreenshotUrls] = useState<Map<string, string>>(new Map())
+  const [screenshotUrls, setScreenshotUrls] = useState<Map<string, string>>(
+    new Map()
+  )
   const [loading, setLoading] = useState(false)
 
   const pollerRef = useRef<ReturnType<typeof createJobPoller> | null>(null)
@@ -115,10 +117,13 @@ export function JobProgress({ job }: JobProgressProps) {
         setCurrentJob(updated)
         // Fetch screenshots when new test results appear
         listScreenshots(updated.job_id)
-          .then(screenshotItems => {
+          .then((screenshotItems) => {
             const urlMap = new Map<string, string>()
-            screenshotItems.forEach(s => {
-              urlMap.set(s.screenshot_id, getScreenshotUrl(updated.job_id, s.screenshot_id))
+            screenshotItems.forEach((s) => {
+              urlMap.set(
+                s.screenshot_id,
+                getScreenshotUrl(updated.job_id, s.screenshot_id)
+              )
             })
             setScreenshotUrls(urlMap)
           })
@@ -134,10 +139,13 @@ export function JobProgress({ job }: JobProgressProps) {
 
     // Initial screenshot fetch
     listScreenshots(job.job_id)
-      .then(screenshotItems => {
+      .then((screenshotItems) => {
         const urlMap = new Map<string, string>()
-        screenshotItems.forEach(s => {
-          urlMap.set(s.screenshot_id, getScreenshotUrl(job.job_id, s.screenshot_id))
+        screenshotItems.forEach((s) => {
+          urlMap.set(
+            s.screenshot_id,
+            getScreenshotUrl(job.job_id, s.screenshot_id)
+          )
         })
         setScreenshotUrls(urlMap)
       })
@@ -152,19 +160,24 @@ export function JobProgress({ job }: JobProgressProps) {
   const testedVersions = new Set(Object.keys(currentJob.test_results))
 
   // Build ordered list of versions to display
-  const displayVersions = currentJob.versions.length > 0
-    ? currentJob.versions
-    : ALL_VERSIONS.map(v => v.label)
+  const displayVersions =
+    currentJob.versions.length > 0
+      ? currentJob.versions
+      : ALL_VERSIONS.map((v) => v.label)
 
   // Group by minor version for display
-  const groupedByMajor = displayVersions.reduce<Record<string, string[]>>((acc, label) => {
-    const ver = ALL_VERSIONS.find(v => v.label === label)
-    if (!ver) return acc
-    const group = ver.major === 1 ? `1.${ver.minor}` : `${ver.major}.${ver.minor}`
-    if (!acc[group]) acc[group] = []
-    acc[group].push(label)
-    return acc
-  }, {})
+  const groupedByMajor = displayVersions.reduce<Record<string, string[]>>(
+    (acc, label) => {
+      const ver = ALL_VERSIONS.find((v) => v.label === label)
+      if (!ver) return acc
+      const group =
+        ver.major === 1 ? `1.${ver.minor}` : `${ver.major}.${ver.minor}`
+      if (!acc[group]) acc[group] = []
+      acc[group].push(label)
+      return acc
+    },
+    {}
+  )
 
   const handleRetry = useCallback(async () => {
     setLoading(true)
@@ -173,12 +186,9 @@ export function JobProgress({ job }: JobProgressProps) {
       setCurrentJob(updated)
       // Restart polling
       pollerRef.current?.stop()
-      pollerRef.current = createJobPoller(
-        updated.job_id,
-        (newJob) => {
-          setCurrentJob(newJob)
-        }
-      )
+      pollerRef.current = createJobPoller(updated.job_id, (newJob) => {
+        setCurrentJob(newJob)
+      })
     } catch {
       // Error handling via UI
     } finally {
@@ -187,8 +197,12 @@ export function JobProgress({ job }: JobProgressProps) {
   }, [currentJob.job_id])
 
   const overallProgress = getOverallProgress(currentJob)
-  const passed = (Object.values(currentJob.test_results) as { passed: boolean }[]).filter(r => r.passed).length
-  const failed = (Object.values(currentJob.test_results) as { passed: boolean }[]).filter(r => !r.passed).length
+  const passed = (
+    Object.values(currentJob.test_results) as { passed: boolean }[]
+  ).filter((r) => r.passed).length
+  const failed = (
+    Object.values(currentJob.test_results) as { passed: boolean }[]
+  ).filter((r) => !r.passed).length
   const pending = displayVersions.length - testedVersions.size
 
   return (
@@ -197,8 +211,14 @@ export function JobProgress({ job }: JobProgressProps) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           {getStatusIcon(currentJob.status)}
-          <span className={cn("text-xs font-medium", getStatusColor(currentJob.status))}>
-            {currentJob.status.charAt(0).toUpperCase() + currentJob.status.slice(1)}
+          <span
+            className={cn(
+              "text-xs font-medium",
+              getStatusColor(currentJob.status)
+            )}
+          >
+            {currentJob.status.charAt(0).toUpperCase() +
+              currentJob.status.slice(1)}
           </span>
           {currentJob.current_step && (
             <span className="text-[10px] text-muted-foreground">
@@ -207,7 +227,7 @@ export function JobProgress({ job }: JobProgressProps) {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-muted-foreground font-mono">
+          <span className="font-mono text-[10px] text-muted-foreground">
             {currentJob.job_id}
           </span>
           {["finished", "failed"].includes(currentJob.status) && (
@@ -279,10 +299,10 @@ export function JobProgress({ job }: JobProgressProps) {
         <div className="flex flex-col gap-1">
           {Object.entries(groupedByMajor).map(([group, versions]) => (
             <div key={group} className="flex flex-col gap-0.5">
-              <div className="px-2 py-1 text-[10px] font-medium text-muted-foreground bg-muted/20">
+              <div className="bg-muted/20 px-2 py-1 text-[10px] font-medium text-muted-foreground">
                 {group}
               </div>
-              {versions.map(label => {
+              {versions.map((label) => {
                 const result = getTestResultForVersion(currentJob, label)
                 const screenshotUrl = screenshotUrls.get(label)
                 const hasScreenshot = !!screenshotUrl
@@ -300,7 +320,7 @@ export function JobProgress({ job }: JobProgressProps) {
                     <div className="flex items-center gap-2 px-2 py-1 text-xs">
                       <span className="size-3 shrink-0">
                         {isPending ? (
-                          <Loader2 className="size-3 text-muted-foreground animate-spin" />
+                          <Loader2 className="size-3 animate-spin text-muted-foreground" />
                         ) : result?.passed ? (
                           <CheckCircle2 className="size-3 text-green-500" />
                         ) : (
@@ -322,15 +342,15 @@ export function JobProgress({ job }: JobProgressProps) {
                           <img
                             src={screenshotUrl}
                             alt={`${label} screenshot`}
-                            className="w-full max-h-[240px] object-contain"
+                            className="max-h-[240px] w-full object-contain"
                             loading="lazy"
                           />
-                          <div className="absolute bottom-1 right-1 flex gap-1">
+                          <div className="absolute right-1 bottom-1 flex gap-1">
                             <a
                               href={screenshotUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="flex h-5 items-center gap-1 rounded-none border border-border bg-background/80 px-1.5 text-[9px] text-muted-foreground backdrop-blur hover:bg-background hover:text-foreground transition-colors"
+                              className="flex h-5 items-center gap-1 rounded-none border border-border bg-background/80 px-1.5 text-[9px] text-muted-foreground backdrop-blur transition-colors hover:bg-background hover:text-foreground"
                             >
                               <ExternalLink className="size-2.5" />
                               Open
@@ -338,7 +358,7 @@ export function JobProgress({ job }: JobProgressProps) {
                             <a
                               href={screenshotUrl}
                               download={`${label}.png`}
-                              className="flex h-5 items-center gap-1 rounded-none border border-border bg-background/80 px-1.5 text-[9px] text-muted-foreground backdrop-blur hover:bg-background hover:text-foreground transition-colors"
+                              className="flex h-5 items-center gap-1 rounded-none border border-border bg-background/80 px-1.5 text-[9px] text-muted-foreground backdrop-blur transition-colors hover:bg-background hover:text-foreground"
                             >
                               <Download className="size-2.5" />
                               Save

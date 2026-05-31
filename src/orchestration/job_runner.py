@@ -129,25 +129,17 @@ def _server_step(
         A tuple of (proxy_process, pico_limbo_process).
         proxy_process is the proxy (e.g. Velocity), or None for no-proxy mode.
         pico_limbo_process is the PicoLimbo process.
-        Both can be None if skipped (all versions already tested).
     """
     job_id = job["job_id"]
     artifact_path = job.get("artifact_path")
     if not artifact_path:
         raise RuntimeError("No artifact path for job")
 
-    # Check if all versions already tested (globally, across all jobs with same commit)
-    tested_versions = database.get_tested_versions_for_commit(job["commit_hash"])
-    remaining = [v for v in versions if v not in tested_versions]
-    has_work_to_do = bool(remaining)
-
     proxy_proc: Optional[subprocess.Popen] = None
     pico_limbo_proc: Optional[subprocess.Popen] = None
 
-    # Always start the proxy if enabled (even if all tests are already done,
-    # the proxy lifecycle must be managed so it gets cleaned up properly).
+    # --- Proxy mode ---
     if proxy_type and proxy_type != "none":
-        # --- Proxy mode ---
         proxy_manager = get_proxy_manager(proxy_type)
         if proxy_manager is None:
             raise ValueError(f"Unknown or unsupported proxy type: {proxy_type}")
@@ -161,51 +153,46 @@ def _server_step(
         proxy_manager.wait_for_ready(proxy_proc)
         logger.info("Job %s: proxy is ready", job_id)
 
-    if has_work_to_do:
-        # Write servers.dat (always points to the proxy port)
-        servers_dat = GAME_DIRECTORY / "servers.dat"
-        create_servers_dat(str(servers_dat), SERVER_ADDRESS)
+    # Write servers.dat (always points to the proxy port)
+    servers_dat = GAME_DIRECTORY / "servers.dat"
+    create_servers_dat(str(servers_dat), SERVER_ADDRESS)
 
-        if proxy_type and proxy_type != "none":
-            # PicoLimbo binds to internal port
-            config_path = Path("/tmp/server.toml")
-            config_path.write_text(SERVER_CONFIG_PROXY_CONTENT)
-        else:
-            # --- Direct mode (no proxy) ---
-            config_path = Path("/tmp/server.toml")
-            config_path.write_text(SERVER_CONFIG_CONTENT)
+    if proxy_type and proxy_type != "none":
+        # PicoLimbo binds to internal port
+        config_path = Path("/tmp/server.toml")
+        config_path.write_text(SERVER_CONFIG_PROXY_CONTENT)
+    else:
+        # --- Direct mode (no proxy) ---
+        config_path = Path("/tmp/server.toml")
+        config_path.write_text(SERVER_CONFIG_CONTENT)
 
-        # Start PicoLimbo
-        logger.info("Job %s: starting PicoLimbo server", job_id)
-        pico_limbo_proc = subprocess.Popen(
-            [artifact_path, "--config", str(config_path)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-        )
+    # Start PicoLimbo
+    logger.info("Job %s: starting PicoLimbo server", job_id)
+    pico_limbo_proc = subprocess.Popen(
+        [artifact_path, "--config", str(config_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
 
-        # Wait for "Listening on:" log line
-        deadline = time.time() + 30
-        listening = False
-        while time.time() < deadline and pico_limbo_proc.poll() is None:
-            line = pico_limbo_proc.stdout.readline()
-            if line:
-                logger.info("PicoLimbo: %s", line.rstrip())
-                if "Listening on:" in line:
-                    listening = True
-                    break
+    # Wait for "Listening on:" log line
+    deadline = time.time() + 30
+    listening = False
+    while time.time() < deadline and pico_limbo_proc.poll() is None:
+        line = pico_limbo_proc.stdout.readline()
+        if line:
+            logger.info("PicoLimbo: %s", line.rstrip())
+            if "Listening on:" in line:
+                listening = True
+                break
 
-        if not listening:
-            pico_limbo_proc.kill()
-            pico_limbo_proc.wait()
-            raise RuntimeError("PicoLimbo did not start listening within 30 seconds")
+    if not listening:
+        pico_limbo_proc.kill()
+        pico_limbo_proc.wait()
+        raise RuntimeError("PicoLimbo did not start listening within 30 seconds")
 
-        logger.info("Job %s: PicoLimbo is listening", job_id)
-
-    if not has_work_to_do and not proxy_proc:
-        logger.info("Job %s: all versions already tested and no proxy", job_id)
-        return None, None
+    logger.info("Job %s: PicoLimbo is listening", job_id)
 
     return proxy_proc, pico_limbo_proc
 
@@ -213,25 +200,14 @@ def _server_step(
 def _test_step(job: dict, versions: list[str], server_proc: Optional[subprocess.Popen]) -> dict:
     """Run Minecraft tests for all versions.
 
-    Skips versions already tested across all jobs with the same commit hash.
-    For skipped versions, reuses screenshots from previous completed jobs.
+    Always re-runs tests for every version — a previously captured screenshot
+    does not guarantee the test truly passed, so we never skip a version.
+
     Returns updated test_results dict.
     """
     job_id = job["job_id"]
     commit_hash = job["commit_hash"]
     test_results = dict(job.get("test_results") or {})
-
-    # Get all versions that have passed across all jobs for this commit hash.
-    # Failed versions are intentionally excluded so they get retried.
-    globally_tested = database.get_tested_versions_for_commit(commit_hash)
-
-    # Get the latest completed job's test results for screenshot lookups.
-    # Fall back to the current job's own test_results (e.g. on retry, the job's
-    # status is reset to 'queued', so get_latest_test_results_for_commit won't
-    # find any 'finished' job for this commit hash).
-    previous_results = database.get_latest_test_results_for_commit(commit_hash)
-    if previous_results is None:
-        previous_results = test_results
 
     # Ensure screenshots directory exists
     os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
@@ -243,26 +219,6 @@ def _test_step(job: dict, versions: list[str], server_proc: Optional[subprocess.
 
     try:
         for version in versions:
-            if version in globally_tested:
-                logger.info("Job %s: version %s already passed for commit %s, skipping", job_id, version, commit_hash[:8])
-                # Look up screenshot from the previous completed job's test results
-                screenshot_path = None
-                if previous_results and version in previous_results:
-                    screenshot_path = previous_results[version].get("screenshot_path")
-                test_results[version] = {
-                    "version": version,
-                    "passed": True,
-                    "screenshot_path": screenshot_path,
-                    "duration_seconds": None,
-                    "error": None,
-                }
-                # Persist after each version so we don't lose progress
-                database.update_job(
-                    job_id,
-                    test_results=json.dumps(test_results),
-                )
-                continue
-
             logger.info("Job %s: testing version %s", job_id, version)
             result = test_single_version(version, commit_hash, virtual_device, SCREENSHOTS_DIR)
             test_results[version] = result
@@ -272,8 +228,6 @@ def _test_step(job: dict, versions: list[str], server_proc: Optional[subprocess.
                 job_id,
                 test_results=json.dumps(test_results),
             )
-            # Update our local set so we don't re-test in this job either
-            globally_tested.add(version)
 
     finally:
         virtual_device.close()
