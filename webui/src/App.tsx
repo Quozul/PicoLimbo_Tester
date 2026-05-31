@@ -1,40 +1,21 @@
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback } from "react"
 import { JobCreation } from "@/components/JobCreation"
 import { VncPanel } from "@/components/VncPanel"
 import { JobInfoPanel } from "@/components/JobInfoPanel"
-import { listJobs, type JobInfo } from "@/lib/api"
+import { type JobInfo } from "@/lib/api"
 
 export function App() {
   const [activeJob, setActiveJob] = useState<JobInfo | null>(null)
-  const [jobs, setJobs] = useState<JobInfo[]>([])
-  const [loadingJobs, setLoadingJobs] = useState(true)
-
-  const fetchJobs = useCallback(async () => {
-    try {
-      const list = await listJobs({ limit: 50 })
-      // Sort by created_at descending (newest first)
-      list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-      setJobs(list)
-      setLoadingJobs(false)
-    } catch {
-      setLoadingJobs(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    fetchJobs()
-    const interval = setInterval(fetchJobs, 5000)
-    return () => clearInterval(interval)
-  }, [fetchJobs])
 
   const handleJobCreated = useCallback((job: JobInfo) => {
     setActiveJob(job)
-    fetchJobs()
-  }, [fetchJobs])
+  }, [])
 
   const handleSelectJob = useCallback((job: JobInfo) => {
     setActiveJob(job)
   }, [])
+
+  const latestJob = activeJob
 
   return (
     <div className="flex h-dvh w-screen flex-col bg-background text-foreground">
@@ -70,9 +51,7 @@ export function App() {
         {/* Right column — Job History + Job Progress */}
         <div className="w-[420px] min-w-[340px] max-w-[500px] border-l border-border flex flex-col overflow-hidden">
           <JobInfoPanel
-            jobs={jobs}
-            activeJob={activeJob}
-            loadingJobs={loadingJobs}
+            activeJob={latestJob}
             onSelectJob={handleSelectJob}
           />
         </div>

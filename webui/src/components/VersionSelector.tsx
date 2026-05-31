@@ -3,7 +3,6 @@ import {
   ALL_VERSIONS,
   GROUPED_VERSIONS,
   VERSION_GROUPS,
-  type MinecraftVersion,
 } from "@/lib/versions"
 import { cn } from "@/lib/utils"
 

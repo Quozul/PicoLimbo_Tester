@@ -1,21 +1,86 @@
-import { useCallback } from "react"
-import { type JobInfo } from "@/lib/api"
+import { useState, useEffect, useCallback } from "react"
+import { listJobs, type JobInfo } from "@/lib/api"
 import { cn } from "@/lib/utils"
-import { getStatusIcon, getStatusColor, formatTimeAgo } from "@/lib/status-helpers"
+import { CheckCircle2, AlertTriangle, Loader2, Circle } from "lucide-react"
 
 interface JobHistoryListProps {
-  jobs: JobInfo[]
   activeJob: JobInfo | null
   onSelectJob: (job: JobInfo) => void
-  loadingJobs: boolean
 }
 
-export function JobHistoryList({
-  jobs,
-  activeJob,
-  onSelectJob,
-  loadingJobs,
-}: JobHistoryListProps) {
+function getStatusIcon(status: string) {
+  switch (status) {
+    case "queued":
+      return <Loader2 className="size-3 text-muted-foreground animate-spin" />
+    case "building":
+      return <Loader2 className="size-3 text-primary animate-spin" />
+    case "testing":
+      return <Loader2 className="size-3 text-amber-500 animate-spin" />
+    case "finished":
+      return <CheckCircle2 className="size-3 text-green-500" />
+    case "failed":
+      return <AlertTriangle className="size-3 text-destructive" />
+    default:
+      return <Circle className="size-3 text-muted-foreground" />
+  }
+}
+
+function getStatusColor(status: string): string {
+  switch (status) {
+    case "queued":
+      return "text-muted-foreground"
+    case "building":
+      return "text-primary"
+    case "testing":
+      return "text-amber-500"
+    case "finished":
+      return "text-green-500"
+    case "failed":
+      return "text-destructive"
+    default:
+      return "text-muted-foreground"
+  }
+}
+
+function formatTimeAgo(dateString: string): string {
+  const now = Date.now()
+  const date = new Date(dateString).getTime()
+  const diff = now - date
+
+  const seconds = Math.floor(diff / 1000)
+  if (seconds < 60) return "just now"
+
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
+}
+
+export function JobHistoryList({ activeJob, onSelectJob }: JobHistoryListProps) {
+  const [jobs, setJobs] = useState<JobInfo[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const fetchJobs = useCallback(async () => {
+    try {
+      const list = await listJobs({ limit: 50 })
+      list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      setJobs(list)
+      setLoading(false)
+    } catch {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchJobs()
+    const interval = setInterval(fetchJobs, 5000)
+    return () => clearInterval(interval)
+  }, [fetchJobs])
+
   const handleSelect = useCallback(
     (job: JobInfo) => {
       onSelectJob(job)
@@ -32,28 +97,9 @@ export function JobHistoryList({
         </span>
       </div>
       <div className="flex flex-col gap-1 max-h-[200px] overflow-y-auto scrollbar-thin">
-        {loadingJobs ? (
+        {loading ? (
           <div className="py-4 text-center">
-            <svg
-              className="size-4 animate-spin text-muted-foreground mx-auto"
-              viewBox="0 0 24 24"
-              fill="none"
-            >
-              <circle
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="3"
-                className="opacity-25"
-              />
-              <path
-                d="M4 12a8 8 0 018-8"
-                stroke="currentColor"
-                strokeWidth="3"
-                strokeLinecap="round"
-              />
-            </svg>
+            <Loader2 className="size-4 animate-spin text-muted-foreground mx-auto" />
           </div>
         ) : jobs.length === 0 ? (
           <div className="py-4 text-center text-xs text-muted-foreground">
@@ -62,9 +108,9 @@ export function JobHistoryList({
         ) : (
           jobs.map(job => {
             const isLatest = job.job_id === activeJob?.job_id
-            const testResults = Object.values(job.test_results)
-            const passed = testResults.filter((r: { passed: boolean }) => r.passed).length
-            const failed = testResults.filter((r: { passed: boolean }) => !r.passed).length
+            const testResults = Object.values(job.test_results) as { passed: boolean }[]
+            const passed = testResults.filter(r => r.passed).length
+            const failed = testResults.filter(r => !r.passed).length
 
             return (
               <div

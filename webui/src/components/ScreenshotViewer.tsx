@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from "react"
 import {
-  getJob,
   listScreenshots,
   createJobPoller,
+  getScreenshotUrl,
   type JobInfo,
   type ScreenshotItem,
 } from "@/lib/api"

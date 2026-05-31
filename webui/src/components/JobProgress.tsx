@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react"
 import {
-  getJob,
   createJobPoller,
   retryJob,
   listScreenshots,
@@ -9,10 +8,7 @@ import {
   type TestResult,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
-import {
-  ALL_VERSIONS,
-  type MinecraftVersion,
-} from "@/lib/versions"
+import { ALL_VERSIONS } from "@/lib/versions"
 import {
   CheckCircle2,
   Circle,
@@ -23,7 +19,6 @@ import {
   AlertTriangle,
   Download,
   ExternalLink,
-  Image as ImageIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -35,7 +30,7 @@ function getTestResultForVersion(
   job: JobInfo,
   versionLabel: string
 ): TestResult | undefined {
-  return job.test_results[versionLabel]
+  return job.test_results[versionLabel] as TestResult | undefined
 }
 
 function getOverallProgress(job: JobInfo): number {
@@ -192,8 +187,8 @@ export function JobProgress({ job }: JobProgressProps) {
   }, [currentJob.job_id])
 
   const overallProgress = getOverallProgress(currentJob)
-  const passed = Object.values(currentJob.test_results).filter(r => r.passed).length
-  const failed = Object.values(currentJob.test_results).filter(r => !r.passed).length
+  const passed = (Object.values(currentJob.test_results) as { passed: boolean }[]).filter(r => r.passed).length
+  const failed = (Object.values(currentJob.test_results) as { passed: boolean }[]).filter(r => !r.passed).length
   const pending = displayVersions.length - testedVersions.size
 
   return (

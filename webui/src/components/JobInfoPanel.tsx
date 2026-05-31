@@ -3,28 +3,19 @@ import { JobProgress } from "@/components/JobProgress"
 import { JobHistoryList } from "@/components/JobHistoryList"
 
 interface JobInfoPanelProps {
-  jobs: JobInfo[]
   activeJob: JobInfo | null
-  loadingJobs: boolean
   onSelectJob: (job: JobInfo) => void
 }
 
-export function JobInfoPanel({
-  jobs,
-  activeJob,
-  loadingJobs,
-  onSelectJob,
-}: JobInfoPanelProps) {
-  const latestJob = jobs.find(j => j.job_id === activeJob?.job_id)
+export function JobInfoPanel({ activeJob, onSelectJob }: JobInfoPanelProps) {
+  const latestJob = activeJob
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Job History */}
       <JobHistoryList
-        jobs={jobs}
         activeJob={activeJob}
         onSelectJob={onSelectJob}
-        loadingJobs={loadingJobs}
       />
 
       {/* Job Progress */}

@@ -33,8 +33,8 @@ export function JobForm({ onJobCreated }: JobFormProps) {
               : null
 
         const input: JobCreateInput = {
-          repo_url: repoUrl || undefined,
-          ref: ref || undefined,
+          repo_url: repoUrl || "https://github.com/Quozul/PicoLimbo.git",
+          ref: ref || "master",
           versions,
         }
 

@@ -25,7 +25,7 @@ export const JobInfoSchema = z.object({
   commit_hash: z.string(),
   current_step: z.string().nullable().optional(),
   versions: z.array(z.string()),
-  test_results: z.record(TestResultSchema),
+  test_results: z.record(z.string(), TestResultSchema),
   artifact_path: z.string().nullable().optional(),
   error_message: z.string().nullable().optional(),
   eta_seconds: z.number().nullable().optional(),
@@ -50,7 +50,7 @@ export type ScreenshotItem = z.infer<typeof ScreenshotItemSchema>
 const API_BASE = import.meta.env.VITE_API_URL || "/api"
 
 async function request<T>(
-  method: string,
+  _method: string,
   path: string,
   options?: RequestInit
 ): Promise<T> {
