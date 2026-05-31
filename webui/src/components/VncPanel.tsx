@@ -3,11 +3,11 @@ import { Button } from "@/components/ui/button"
 import { RefreshCw, Maximize2, Minimize2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-interface VncViewerProps {
+interface VncPanelProps {
   vncUrl?: string
 }
 
-export function VncViewer({ vncUrl }: VncViewerProps) {
+export function VncPanel({ vncUrl }: VncPanelProps) {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -87,5 +87,3 @@ export function VncViewer({ vncUrl }: VncViewerProps) {
     </div>
   )
 }
-
-
