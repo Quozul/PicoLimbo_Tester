@@ -73,7 +73,7 @@ export function VersionSelector({ selected, onChange }: VersionSelectorProps) {
   const totalCount = ALL_VERSIONS.length
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3 overflow-y-hidden">
       {/* Toolbar */}
       <div className="flex items-center gap-2 flex-wrap">
         <input
@@ -105,7 +105,7 @@ export function VersionSelector({ selected, onChange }: VersionSelectorProps) {
       </div>
 
       {/* Version Groups */}
-      <div className="flex flex-col gap-1 max-h-[320px] overflow-y-auto scrollbar-thin">
+      <div className="flex flex-col gap-1 overflow-y-auto scrollbar-thin">
         {filteredGroups.map(group => {
           const versions = GROUPED_VERSIONS[group]
           const groupSelected = versions.filter(v => selected.has(v.label))

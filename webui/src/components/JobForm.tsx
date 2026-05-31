@@ -50,7 +50,7 @@ export function JobForm({ onJobCreated }: JobFormProps) {
   )
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4 h-full overflow-hidden">
       {/* Repo URL */}
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="repo-url" className="text-xs">
@@ -79,7 +79,7 @@ export function JobForm({ onJobCreated }: JobFormProps) {
       </div>
 
       {/* Version Selector */}
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-1.5 overflow-y-hidden grow">
         <Label className="text-xs">
           Versions{" "}
           <span className="text-muted-foreground font-normal">

@@ -13,7 +13,7 @@ export function JobCreation({ onJobCreated }: JobCreationProps) {
         <LayoutPanelLeft className="size-3.5 text-muted-foreground" />
         <h2 className="text-xs font-medium">Create Job</h2>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 py-4">
+      <div className="flex-1 overflow-y-hidden px-4 py-4">
         <JobForm onJobCreated={onJobCreated} />
       </div>
     </div>

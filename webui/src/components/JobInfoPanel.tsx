@@ -25,7 +25,7 @@ export function JobInfoPanel({ activeJob, onSelectJob }: JobInfoPanelProps) {
         ) : (
           <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
             <svg
-              className="size-12 text-muted-foreground/30"
+              className="size-12 text-muted-foreground"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
