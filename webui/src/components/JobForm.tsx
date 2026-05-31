@@ -2,6 +2,13 @@ import { useState, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { VersionSelector } from "@/components/VersionSelector"
 import { createJob, type JobCreateInput, type JobInfo, ProxyOptions } from "@/lib/api"
 import { ALL_VERSION_LABELS } from "@/lib/versions"
@@ -82,24 +89,24 @@ export function JobForm({ onJobCreated }: JobFormProps) {
 
       {/* Proxy */}
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="proxy" className="text-xs">
+        <Label className="text-xs">
           <span className="inline-flex items-center gap-1">
             <Server className="size-3" />
             Proxy
           </span>
         </Label>
-        <select
-          id="proxy"
-          value={proxy}
-          onChange={e => setProxy(e.target.value)}
-          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {ProxyOptions.map(option => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        <Select value={proxy} onValueChange={setProxy}>
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="None" />
+          </SelectTrigger>
+          <SelectContent>
+            {ProxyOptions.map(option => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Version Selector */}
