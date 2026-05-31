@@ -34,6 +34,10 @@ def _setup_test_db(conn: sqlite3.Connection) -> None:
             error_message TEXT,
             eta_seconds INTEGER,
             proxy TEXT NOT NULL DEFAULT 'none',
+            forwarding_method TEXT NOT NULL DEFAULT 'modern',
+            plugin TEXT,
+            plugins TEXT,
+            login_wait_timeout INTEGER NOT NULL DEFAULT 30,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )

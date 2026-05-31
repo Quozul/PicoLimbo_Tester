@@ -30,8 +30,11 @@ export function JobForm({ onJobCreated }: JobFormProps) {
   )
   const [ref, setRef] = useState("master")
   const [proxy, setProxy] = useState("none")
+  const [loginWaitTimeout, setLoginWaitTimeout] = useState(30)
   const [forwardingMethod, setForwardingMethod] = useState("modern")
-  const [forwardingSecret, setForwardingSecret] = useState("sup3r-s3cr3t")
+  const [selectedPlugins, setSelectedPluginsState] = useState<Set<string>>(
+    new Set()
+  )
   const [showConfigDialog, setShowConfigDialog] = useState(false)
   const [selectedVersions, setSelectedVersions] = useState<Set<string>>(
     new Set()
@@ -59,7 +62,8 @@ export function JobForm({ onJobCreated }: JobFormProps) {
           versions,
           proxy,
           forwarding_method: forwardingMethod,
-          forwarding_secret: forwardingSecret,
+          plugins: selectedPlugins.size > 0 ? Array.from(selectedPlugins) : undefined,
+          login_wait_timeout: loginWaitTimeout,
         }
 
         const job = await createJob(input)
@@ -70,7 +74,7 @@ export function JobForm({ onJobCreated }: JobFormProps) {
         setLoading(false)
       }
     },
-    [repoUrl, ref, proxy, forwardingMethod, forwardingSecret, selectedVersions, onJobCreated]
+    [repoUrl, ref, proxy, forwardingMethod, loginWaitTimeout, selectedPlugins, selectedVersions, onJobCreated]
   )
 
   return (
@@ -147,9 +151,24 @@ export function JobForm({ onJobCreated }: JobFormProps) {
         onOpenChange={setShowConfigDialog}
         forwardingMethod={forwardingMethod}
         onForwardingMethodChange={setForwardingMethod}
-        forwardingSecret={forwardingSecret}
-        onForwardingSecretChange={setForwardingSecret}
+        selectedPlugins={Array.from(selectedPlugins)}
+        onSelectedPluginsChange={(pluginNames) => setSelectedPluginsState(new Set(pluginNames))}
       />
+
+      {/* Login Wait Timeout */}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="login-wait-timeout" className="text-xs">
+          Login Wait Timeout (seconds)
+        </Label>
+        <Input
+          id="login-wait-timeout"
+          type="number"
+          min={1}
+          max={300}
+          value={loginWaitTimeout}
+          onChange={(e) => setLoginWaitTimeout(Number(e.target.value))}
+        />
+      </div>
 
       {/* Version Selector */}
       <div className="flex grow flex-col gap-1.5 overflow-y-hidden">

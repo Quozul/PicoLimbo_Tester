@@ -29,9 +29,13 @@ class JobCreate(BaseModel):
         default="modern",
         description="Velocity player-info-forwarding-mode: none, legacy, bungeeguard, modern",
     )
-    forwarding_secret: str = Field(
-        default="sup3r-s3cr3t",
-        description="Velocity forwarding secret file content",
+    plugins: Optional[list[str]] = Field(
+        default=None,
+        description="List of uploaded Velocity plugin names (.jar) to copy into plugins folder",
+    )
+    login_wait_timeout: int = Field(
+        default=30,
+        description="Seconds to wait after joining the server before taking a screenshot (default: 30)",
     )
 
 
@@ -61,3 +65,5 @@ class JobInfo(BaseModel):
     eta_seconds: Optional[int] = None
     created_at: datetime
     updated_at: datetime
+    plugins: list[str] = []
+    login_wait_timeout: int = 30

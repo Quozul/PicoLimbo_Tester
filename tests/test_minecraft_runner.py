@@ -163,24 +163,30 @@ class TestCaptureScreenshot:
         captured_save_args = mock_image.save.call_args
         assert captured_save_args[0][0] == result_path
 
-    def test_raises_on_missing_window_info(self):
-        """When get_window_info returns None, an exception is raised."""
+    def test_uses_full_screen_capture(self):
+        """capture_screenshot uses full screen capture (no window info needed)."""
         from unittest.mock import MagicMock, patch
 
-        with (
-            patch("src.minecraft.runner.get_window_info", return_value=None),
-            patch("src.minecraft.runner.ImageGrab.grab"),
-        ):
-            with pytest.raises(Exception, match="Could not get window geometry"):
-                capture_screenshot(
-                    version="1.20.1",
-                    commit_hash="aabbccdd11223344",
-                    window_id="fake_window",
-                    screenshots_dir="/tmp/screenshots",
-                )
+        mock_image = MagicMock()
+        mock_image.convert.return_value = mock_image
 
-    def test_captures_correct_bbox(self, tmp_path):
-        """ImageGrab.grab is called with the window's absolute bbox."""
+        with (
+            patch("src.minecraft.runner.ImageGrab.grab", return_value=mock_image),
+            patch("os.makedirs"),
+        ):
+            result_path = capture_screenshot(
+                version="1.20.1",
+                commit_hash="aabbccdd11223344",
+                window_id="fake_window",
+                screenshots_dir="/tmp/screenshots",
+            )
+
+        # Should save successfully without needing window info
+        mock_image.save.assert_called_once()
+        assert result_path is not None
+
+    def test_captures_full_screen(self, tmp_path):
+        """ImageGrab.grab is called without bbox to capture the full screen."""
         from unittest.mock import MagicMock, patch
 
         mock_window_info = {"x": 50, "y": 100, "width": 800, "height": 600}
@@ -197,9 +203,8 @@ class TestCaptureScreenshot:
                         screenshots_dir=screenshots_dir,
                     )
 
-        # ImageGrab.grab should be called with (x, y, x+w, y+h)
-        expected_bbox = (50, 100, 850, 700)
-        grab_mock.assert_called_once_with(bbox=expected_bbox)
+        # ImageGrab.grab is called without bbox to capture full screen
+        grab_mock.assert_called_once_with()
 
     def test_filename_includes_version_and_commit(self, tmp_path):
         """The saved filename contains the version and short commit hash."""

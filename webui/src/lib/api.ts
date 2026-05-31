@@ -12,7 +12,8 @@ export const JobCreateSchema = z.object({
   versions: z.array(z.string()).nullable().optional(),
   proxy: z.string().optional().default("none"),
   forwarding_method: z.string().optional().default("modern"),
-  forwarding_secret: z.string().optional().default("sup3r-s3cr3t"),
+  plugins: z.array(z.string()).optional(),
+  login_wait_timeout: z.number().int().positive().optional().default(30),
 })
 
 export const TestResultSchema = z.object({
@@ -38,6 +39,8 @@ export const JobInfoSchema = z.object({
   eta_seconds: z.number().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
+  plugins: z.array(z.string()).optional(),
+  login_wait_timeout: z.number().int().positive().optional().default(30),
 })
 
 export const ScreenshotItemSchema = z.object({
@@ -155,6 +158,54 @@ export async function retryJob(jobId: string): Promise<JobInfo> {
     method: "POST",
   })
   return JobInfoSchema.parse(data)
+}
+
+/**
+ * POST /plugins/upload
+ * Upload a Velocity plugin .jar file.
+ */
+export async function uploadPlugin(
+  file: File
+): Promise<{ name: string; status: string }> {
+  const formData = new FormData()
+  formData.append("plugin", file)
+  const url = `${API_BASE}/plugins/upload`
+  const response = await fetch(url, {
+    method: "POST",
+    body: formData,
+  })
+
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({}))
+    throw new Error(errorBody.detail || `Upload error: ${response.status}`)
+  }
+
+  return response.json()
+}
+
+/**
+ * GET /plugins
+ * List all uploaded plugins.
+ */
+export async function listPlugins(): Promise<
+  { name: string; status: string }[]
+> {
+  const data = await request<{ name: string; status: string }[]>(
+    "GET",
+    "/plugins"
+  )
+  return data
+}
+
+/**
+ * DELETE /plugins/{name}
+ * Delete an uploaded plugin.
+ */
+export async function deletePlugin(
+  name: string
+): Promise<{ deleted: boolean }> {
+  const data = await request<{ deleted: boolean }>(`DELETE`, `/plugins/${name}`)
+  return data
 }
 
 /**

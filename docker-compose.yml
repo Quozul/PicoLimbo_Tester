@@ -5,7 +5,7 @@ services:
       - "6080:6080" # webvnc server: http://localhost:6080/vnc.html
       - "8000:8000" # PicoLimbo Build API
     volumes:
-      - ./integration_tests_reports:/app/integration_tests_reports
+      - ./cache/integration_tests_reports:/app/integration_tests_reports
       - ./full_screenshots:/app/full_screenshots
       - ./cache/.minecraft:/root/.minecraft
       - ./cache/minecraft:/app/minecraft
@@ -13,5 +13,6 @@ services:
       - ./cache/repos:/app/repos
       - ./cache/builds:/app/builds
       - ./cache/proxies:/app/cache/proxies
+      - ./cache/plugins:/app/plugins
     build: .
     privileged: true

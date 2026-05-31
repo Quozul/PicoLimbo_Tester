@@ -141,7 +141,9 @@ def create_job(
     versions: Optional[list[str]] = None,
     proxy: str = "none",
     forwarding_method: str = "modern",
-    forwarding_secret: str = "sup3r-s3cr3t",
+    plugin: Optional[str] = None,
+    plugins: Optional[list[str]] = None,
+    login_wait_timeout: int = 30,
 ) -> dict:
     """Always create a new job.
 
@@ -166,7 +168,7 @@ def create_job(
     # Always create a new job - step-level logic handles skipping
     job = database.create_job(
         repo_url, ref, owner, commit_hash, versions or [],
-        proxy, forwarding_method, forwarding_secret,
+        proxy, forwarding_method, plugin, plugins, login_wait_timeout,
     )
     logger.info("Created new job %s for %s@%s", job["job_id"], repo_url, ref)
     return job

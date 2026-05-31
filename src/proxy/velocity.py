@@ -19,21 +19,7 @@ logger = logging.getLogger(__name__)
 VELOCITY_API_BASE = "https://fill.papermc.io/v3/projects/velocity"
 
 # Default proxy cache directory
-# Use XDG_CACHE_HOME or ~/.cache if /app is not writable (e.g. local dev)
-def _get_default_proxy_cache_dir() -> Path:
-    """Determine the default proxy cache directory."""
-    import os
-
-    xdg_cache = os.environ.get("XDG_CACHE_HOME")
-    if xdg_cache:
-        return Path(xdg_cache) / "pico_limbo" / "proxies"
-    home = os.environ.get("HOME")
-    if home:
-        return Path(home) / ".cache" / "pico_limbo" / "proxies"
-    return Path("/app/cache/proxies")
-
-
-PROXY_CACHE_DIR = _get_default_proxy_cache_dir()
+PROXY_CACHE_DIR = Path("/app/cache/proxies")
 
 # Velocity config file name
 VELOCITY_CONFIG_FILENAME = "velocity.toml"
@@ -41,6 +27,9 @@ VELOCITY_CONFIG_FILENAME = "velocity.toml"
 # Velocity log patterns for readiness detection
 LOGGING_ON_PATTERN = re.compile(r"Listening on", re.IGNORECASE)
 DONE_PATTERN = re.compile(r"Done", re.IGNORECASE)
+
+
+PLUGINS_DIR = Path("/app/plugins")
 
 
 class VelocityProxyManager(ProxyManager):
@@ -111,28 +100,34 @@ class VelocityProxyManager(ProxyManager):
         logger.info("Downloaded Velocity jar: %s", jar_path)
         return jar_path
 
-    def start(self, config_dir: Path, pico_limbo_port: int, forwarding_method: str = "modern", forwarding_secret: str = "sup3r-s3cr3t") -> Popen:
+    _FORWARDING_SECRET = "sup3r-s3cr3t"
+
+    def start(self, config_dir: Path, pico_limbo_port: int, forwarding_method: str = "modern", plugin: str | None = None, plugins: list[str] | None = None) -> Popen:
         """Start the Velocity proxy process.
 
         Args:
             config_dir: Directory where velocity.toml will be written.
             pico_limbo_port: Port that PicoLimbo is running on.
             forwarding_method: Player info forwarding mode (none, legacy, bungeeguard, modern).
-            forwarding_secret: Secret for forwarding authentication.
+            plugin: Single plugin name (legacy, deprecated, use plugins instead).
+            plugins: List of plugin names to copy into plugins folder.
 
         Returns:
             The running Velocity process.
         """
         # Generate and write config
         config_path = config_dir / VELOCITY_CONFIG_FILENAME
-        config_content = self._generate_config(pico_limbo_port, forwarding_method, forwarding_secret)
+        config_content = self._generate_config(pico_limbo_port, forwarding_method)
         config_path.write_text(config_content)
         logger.info("Wrote Velocity config to %s", config_path)
 
         # Write forwarding secret file
         secret_path = config_dir / "forwarding.secret"
-        secret_path.write_text(forwarding_secret)
+        secret_path.write_text(self._FORWARDING_SECRET)
         logger.info("Wrote Velocity forwarding secret to %s", secret_path)
+
+        # Copy plugins
+        self._copy_plugins(config_dir, plugin, plugins)
 
         jar_path = self.download_if_needed()
         logger.info(
@@ -171,6 +166,38 @@ class VelocityProxyManager(ProxyManager):
                     proc.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     logger.error("Velocity failed to be killed")
+
+    def _copy_plugins(self, config_dir: Path, plugin: str | None = None, plugins: list[str] | None = None) -> None:
+        """Copy plugin .jar files into the proxy's plugins directory.
+
+        Args:
+            config_dir: Directory where velocity.toml is written (parent of plugins/).
+            plugin: Single plugin name (legacy, deprecated, use plugins instead).
+            plugins: List of plugin names to copy.
+        """
+        plugins_dir = config_dir / "plugins"
+        plugins_dir.mkdir(exist_ok=True)
+
+        # Resolve the list of plugins to copy
+        to_copy: list[str] = []
+        if plugin:
+            to_copy.append(plugin)
+        if plugins:
+            to_copy.extend(plugins)
+
+        if not to_copy:
+            return
+
+        import shutil
+
+        for plugin_name in to_copy:
+            source = PLUGINS_DIR / plugin_name
+            dest = plugins_dir / plugin_name
+            if source.exists():
+                shutil.copy2(str(source), str(dest))
+                logger.info("Copied plugin %s to %s", plugin_name, dest)
+            else:
+                logger.warning("Plugin file %s not found in %s, skipping", plugin_name, PLUGINS_DIR)
 
     def wait_for_ready(
         self, proc: Popen, timeout: float = 30.0
@@ -216,13 +243,12 @@ class VelocityProxyManager(ProxyManager):
             f"Velocity did not become ready within {timeout} seconds"
         )
 
-    def config_template(self, pico_limbo_port: int, forwarding_method: str = "modern", forwarding_secret: str = "sup3r-s3cr3t") -> dict:
+    def config_template(self, pico_limbo_port: int, forwarding_method: str = "modern") -> dict:
         """Returns config values for Velocity.
 
         Args:
             pico_limbo_port: Port that PicoLimbo is running on.
             forwarding_method: Player info forwarding mode (none, legacy, bungeeguard, modern).
-            forwarding_secret: Secret for forwarding authentication.
 
         Returns:
             Dict of configuration values for the proxy.
@@ -257,18 +283,17 @@ class VelocityProxyManager(ProxyManager):
             return f'"{escaped}"'
         return str(value)
 
-    def _generate_config(self, pico_limbo_port: int, forwarding_method: str = "modern", forwarding_secret: str = "sup3r-s3cr3t") -> str:
+    def _generate_config(self, pico_limbo_port: int, forwarding_method: str = "modern") -> str:
         """Generate a TOML config for Velocity.
 
         Args:
             pico_limbo_port: Port that PicoLimbo is running on.
             forwarding_method: Player info forwarding mode.
-            forwarding_secret: Secret for forwarding authentication.
 
         Returns:
             TOML configuration string.
         """
-        config = self.config_template(pico_limbo_port, forwarding_method, forwarding_secret)
+        config = self.config_template(pico_limbo_port, forwarding_method)
         return (
             f'bind = {self._toml_value(config["bind"])}\n'
             f'online-mode = {self._toml_value(config["online_mode"])}\n'

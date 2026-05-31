@@ -260,11 +260,12 @@ class TestTestStepAlwaysTestsAllVersions:
             }
 
         with patch.object(job_runner.database, "update_job"):
-            with patch("src.orchestration.job_runner.test_single_version", side_effect=side_effect) as mock_test:
-                with patch("src.orchestration.job_runner.empty_directory"):
-                    with patch("src.orchestration.job_runner.os.makedirs"):
-                        with patch("src.orchestration.job_runner.VirtualInputController", return_value=mock_vim):
-                            results = job_runner._test_step(job, job["versions"], None)
+            with patch.object(job_runner.database, "get_job_by_id", return_value=job):
+                with patch("src.orchestration.job_runner.test_single_version", side_effect=side_effect) as mock_test:
+                    with patch("src.orchestration.job_runner.empty_directory"):
+                        with patch("src.orchestration.job_runner.os.makedirs"):
+                            with patch("src.orchestration.job_runner.VirtualInputController", return_value=mock_vim):
+                                results = job_runner._test_step(job, job["versions"], None)
 
         # All 3 versions should be tested
         assert mock_test.call_count == 3
@@ -285,13 +286,14 @@ class TestTestStepAlwaysTestsAllVersions:
             return _make_test_result(version, True, f"/screenshots/{version}.png")
 
         with patch.object(job_runner.database, "update_job"):
-            with patch("src.orchestration.job_runner.test_single_version", side_effect=side_effect) as mock_test:
-                with patch("src.orchestration.job_runner.empty_directory"):
-                    with patch("src.orchestration.job_runner.os.makedirs"):
-                        with patch("src.orchestration.job_runner.VirtualInputController", return_value=mock_vim):
-                            job_runner._test_step(job, job["versions"], None)
+            with patch.object(job_runner.database, "get_job_by_id", return_value=job):
+                with patch("src.orchestration.job_runner.test_single_version", side_effect=side_effect) as mock_test:
+                    with patch("src.orchestration.job_runner.empty_directory"):
+                        with patch("src.orchestration.job_runner.os.makedirs"):
+                            with patch("src.orchestration.job_runner.VirtualInputController", return_value=mock_vim):
+                                job_runner._test_step(job, job["versions"], None)
 
-        mock_test.assert_called_once_with("3.10", job["commit_hash"], mock_vim, job_runner.SCREENSHOTS_DIR)
+        mock_test.assert_called_once_with("3.10", job["commit_hash"], mock_vim, job_runner.SCREENSHOTS_DIR, 30)
 
 
 # ---------------------------------------------------------------------------
@@ -307,11 +309,12 @@ class TestTestStepResultsReflectActualTests:
         mock_vim.close = MagicMock()
 
         with patch.object(job_runner.database, "update_job"):
-            with patch("src.orchestration.job_runner.test_single_version", return_value=_make_test_result("3.10", True, "/screenshots/3.10.png")):
-                with patch("src.orchestration.job_runner.empty_directory"):
-                    with patch("src.orchestration.job_runner.os.makedirs"):
-                        with patch("src.orchestration.job_runner.VirtualInputController", return_value=mock_vim):
-                            results = job_runner._test_step(job, job["versions"], None)
+            with patch.object(job_runner.database, "get_job_by_id", return_value=job):
+                with patch("src.orchestration.job_runner.test_single_version", return_value=_make_test_result("3.10", True, "/screenshots/3.10.png")):
+                    with patch("src.orchestration.job_runner.empty_directory"):
+                        with patch("src.orchestration.job_runner.os.makedirs"):
+                            with patch("src.orchestration.job_runner.VirtualInputController", return_value=mock_vim):
+                                results = job_runner._test_step(job, job["versions"], None)
 
         assert results["3.10"]["passed"] is True
         assert results["3.10"]["screenshot_path"] == "/screenshots/3.10.png"
@@ -332,11 +335,12 @@ class TestTestStepResultsReflectActualTests:
         }
 
         with patch.object(job_runner.database, "update_job"):
-            with patch("src.orchestration.job_runner.test_single_version", return_value=failed_result):
-                with patch("src.orchestration.job_runner.empty_directory"):
-                    with patch("src.orchestration.job_runner.os.makedirs"):
-                        with patch("src.orchestration.job_runner.VirtualInputController", return_value=mock_vim):
-                            results = job_runner._test_step(job, job["versions"], None)
+            with patch.object(job_runner.database, "get_job_by_id", return_value=job):
+                with patch("src.orchestration.job_runner.test_single_version", return_value=failed_result):
+                    with patch("src.orchestration.job_runner.empty_directory"):
+                        with patch("src.orchestration.job_runner.os.makedirs"):
+                            with patch("src.orchestration.job_runner.VirtualInputController", return_value=mock_vim):
+                                results = job_runner._test_step(job, job["versions"], None)
 
         assert results["3.10"]["passed"] is False
         assert results["3.10"]["error"] == "connection timeout"
@@ -348,7 +352,10 @@ class TestTestStepResultsReflectActualTests:
 
 class TestTestStepPersistence:
     def test_update_job_called_after_each_version(self):
-        """database.update_job is called after processing each version."""
+        """database.update_job is called after processing each version.
+
+        Each version triggers 2 calls: one for current_step and one for test_results.
+        """
         job = _make_job(versions=["3.10", "3.11", "3.12"])
 
         mock_vim = MagicMock()
@@ -358,14 +365,15 @@ class TestTestStepPersistence:
             return _make_test_result(version, True, f"/screenshots/{version}.png")
 
         with patch.object(job_runner.database, "update_job") as mock_db_update:
-            with patch("src.orchestration.job_runner.test_single_version", side_effect=side_effect):
-                with patch("src.orchestration.job_runner.empty_directory"):
-                    with patch("src.orchestration.job_runner.os.makedirs"):
-                        with patch("src.orchestration.job_runner.VirtualInputController", return_value=mock_vim):
-                            job_runner._test_step(job, job["versions"], None)
+            with patch.object(job_runner.database, "get_job_by_id", return_value=job):
+                with patch("src.orchestration.job_runner.test_single_version", side_effect=side_effect):
+                    with patch("src.orchestration.job_runner.empty_directory"):
+                        with patch("src.orchestration.job_runner.os.makedirs"):
+                            with patch("src.orchestration.job_runner.VirtualInputController", return_value=mock_vim):
+                                job_runner._test_step(job, job["versions"], None)
 
-        # 3 versions tested → 3 update_job calls
-        assert mock_db_update.call_count == 3
+        # 3 versions tested → 6 update_job calls (2 per version: current_step + test_results)
+        assert mock_db_update.call_count == 6
 
     def test_persisted_test_results_accumulate_correctly(self):
         """Each update_job call includes all results accumulated so far."""
@@ -377,22 +385,29 @@ class TestTestStepPersistence:
             return _make_test_result(version, True, f"/screenshots/{version}.png")
 
         with patch.object(job_runner.database, "update_job") as mock_db_update:
-            with patch("src.orchestration.job_runner.test_single_version", side_effect=side_effect):
-                with patch("src.orchestration.job_runner.empty_directory"):
-                    with patch("src.orchestration.job_runner.os.makedirs"):
-                        with patch("src.orchestration.job_runner.VirtualInputController") as mock_vim:
-                            mock_vim.return_value.close = MagicMock()
-                            job_runner._test_step(job, job["versions"], None)
+            with patch.object(job_runner.database, "get_job_by_id", return_value=job):
+                with patch("src.orchestration.job_runner.test_single_version", side_effect=side_effect):
+                    with patch("src.orchestration.job_runner.empty_directory"):
+                        with patch("src.orchestration.job_runner.os.makedirs"):
+                            with patch("src.orchestration.job_runner.VirtualInputController") as mock_vim:
+                                mock_vim.return_value.close = MagicMock()
+                                job_runner._test_step(job, job["versions"], None)
 
-        # First call: only "3.10" in results
-        first_call = mock_db_update.call_args_list[0]
-        first_results = json.loads(first_call.kwargs["test_results"])
+        # Each version has 2 calls: current_step (no test_results) then test_results
+        # Call 0: current_step for 3.10 (no test_results)
+        # Call 1: test_results for 3.10 (only 3.10)
+        # Call 2: current_step for 3.11 (no test_results)
+        # Call 3: test_results for 3.11 (3.10 and 3.11)
+
+        # First call with test_results is at index 1
+        first_results_call = mock_db_update.call_args_list[1]
+        first_results = json.loads(first_results_call.kwargs["test_results"])
         assert set(first_results.keys()) == {"3.10"}
         assert first_results["3.10"]["passed"] is True
 
-        # Second call: both "3.10" and "3.11" in results
-        second_call = mock_db_update.call_args_list[1]
-        second_results = json.loads(second_call.kwargs["test_results"])
+        # Second call with test_results is at index 3
+        second_results_call = mock_db_update.call_args_list[3]
+        second_results = json.loads(second_results_call.kwargs["test_results"])
         assert set(second_results.keys()) == {"3.10", "3.11"}
         assert second_results["3.10"]["passed"] is True
         assert second_results["3.11"]["passed"] is True

@@ -13,6 +13,7 @@ dependencies = [
     "nbtlib>=2.0.0",
     "uvicorn[standard]>=0.48.0",
     "httpx>=0.28.1",
+    "python-multipart>=0.0.29"
 ]
 
 [dependency-groups]

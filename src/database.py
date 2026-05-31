@@ -34,7 +34,8 @@ def _ensure_db() -> None:
                 eta_seconds INTEGER,
                 proxy TEXT NOT NULL DEFAULT 'none',
                 forwarding_method TEXT NOT NULL DEFAULT 'modern',
-                forwarding_secret TEXT NOT NULL DEFAULT 'sup3r-s3cr3t',
+                plugins TEXT,
+                login_wait_timeout INTEGER NOT NULL DEFAULT 30,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
@@ -50,8 +51,20 @@ def _ensure_db() -> None:
             conn.execute("ALTER TABLE jobs ADD COLUMN forwarding_method TEXT NOT NULL DEFAULT 'modern'")
         except sqlite3.OperationalError:
             pass
+        # Migration: add plugin column
         try:
-            conn.execute("ALTER TABLE jobs ADD COLUMN forwarding_secret TEXT NOT NULL DEFAULT 'sup3r-s3cr3t'")
+            conn.execute("ALTER TABLE jobs ADD COLUMN plugin TEXT")
+        except sqlite3.OperationalError:
+            # Column already exists
+            pass
+        # Migration: rename plugin to plugins (if plugin exists, plugins doesn't)
+        try:
+            conn.execute("ALTER TABLE jobs ADD COLUMN plugins TEXT")
+        except sqlite3.OperationalError:
+            pass
+        # Migration: add login_wait_timeout column
+        try:
+            conn.execute("ALTER TABLE jobs ADD COLUMN login_wait_timeout INTEGER NOT NULL DEFAULT 30")
         except sqlite3.OperationalError:
             pass
         conn.commit()
@@ -82,18 +95,29 @@ def create_job(
     versions: list[str],
     proxy: str = "none",
     forwarding_method: str = "modern",
-    forwarding_secret: str = "sup3r-s3cr3t",
+    plugin: Optional[str] = None,
+    plugins: Optional[list[str]] = None,
+    login_wait_timeout: int = 30,
 ) -> dict:
-    """Create a new job. Raises sqlite3.IntegrityError if duplicate."""
+    """Create a new job. Raises sqlite3.IntegrityError if duplicate.
+
+    Args:
+        plugin: Single plugin name (legacy, deprecated, use plugins instead).
+        plugins: List of plugin names (new standard).
+    """
     now = _now_iso()
     job_id = _generate_job_id()
+    # Legacy: if single plugin provided but not list, convert
+    if plugins is None and plugin is not None:
+        plugins = [plugin]
+    plugins_json = json.dumps(plugins) if plugins else None
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO jobs (job_id, repo_url, ref, owner, commit_hash, status, current_step, versions, test_results, error_message, eta_seconds, proxy, forwarding_method, forwarding_secret, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 'queued', NULL, ?, '{}', NULL, NULL, ?, ?, ?, ?, ?)
+            INSERT INTO jobs (job_id, repo_url, ref, owner, commit_hash, status, current_step, versions, test_results, error_message, eta_seconds, proxy, forwarding_method, plugins, login_wait_timeout, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'queued', NULL, ?, '{}', NULL, NULL, ?, ?, ?, ?, ?, ?)
             """,
-            (job_id, repo_url, ref, owner, commit_hash, json.dumps(versions), proxy, forwarding_method, forwarding_secret, now, now),
+            (job_id, repo_url, ref, owner, commit_hash, json.dumps(versions), proxy, forwarding_method, plugins_json, login_wait_timeout, now, now),
         )
         conn.commit()
     return get_job_by_id(job_id)
@@ -233,11 +257,22 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
         result["forwarding_method"] = row["forwarding_method"]
     except KeyError:
         result["forwarding_method"] = "modern"
-    # Read forwarding_secret
+    # Read plugins
     try:
-        result["forwarding_secret"] = row["forwarding_secret"]
+        raw = row["plugins"]
+        result["plugins"] = json.loads(raw) if raw else []
     except KeyError:
-        result["forwarding_secret"] = "sup3r-s3cr3t"
+        # Legacy: fall back to single plugin column
+        try:
+            raw_plugin = row["plugin"]
+            result["plugins"] = [raw_plugin] if raw_plugin else []
+        except KeyError:
+            result["plugins"] = []
+    # Read login_wait_timeout
+    try:
+        result["login_wait_timeout"] = row["login_wait_timeout"]
+    except KeyError:
+        result["login_wait_timeout"] = 30
     return result
 
 

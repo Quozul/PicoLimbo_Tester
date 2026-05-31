@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Form, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -59,7 +59,8 @@ def create_job(body: JobCreate):
     try:
         job = engine.create_job(
             body.repo_url, body.ref, body.versions, body.proxy,
-            body.forwarding_method, body.forwarding_secret,
+            body.forwarding_method, plugins=body.plugins,
+            login_wait_timeout=body.login_wait_timeout,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -218,6 +219,81 @@ def list_jobs(
         result.append(response)
 
     return result
+
+
+# ─── Plugin Endpoints ────────────────────────────────────────────────────────
+
+PLUGINS_DIR = Path("/app/plugins")
+
+
+def _ensure_plugins_dir() -> None:
+    """Ensure the plugins directory exists."""
+    PLUGINS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@app.post(
+    "/plugins/upload",
+    status_code=201,
+    summary="Upload a Velocity plugin (.jar file)",
+)
+async def upload_plugin(plugin: UploadFile = File(...)):
+    """Upload a Velocity plugin .jar file.
+
+    Saves the file to the plugins directory and returns its name.
+    """
+    _ensure_plugins_dir()
+
+    if not plugin.filename or not plugin.filename.endswith(".jar"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only .jar files are allowed",
+        )
+
+    file_path = PLUGINS_DIR / plugin.filename
+
+    # Read and save the file
+    content = await plugin.read()
+    file_path.write_bytes(content)
+
+    return {"name": plugin.filename, "status": "ready"}
+
+
+@app.get(
+    "/plugins",
+    summary="List all uploaded plugins",
+)
+def list_plugins():
+    """List all uploaded plugin .jar files."""
+    _ensure_plugins_dir()
+
+    plugins = []
+    for path in sorted(PLUGINS_DIR.iterdir()):
+        if path.is_file() and path.suffix == ".jar":
+            plugins.append({"name": path.name, "status": "ready"})
+
+    return plugins
+
+
+@app.delete(
+    "/plugins/{name}",
+    summary="Delete an uploaded plugin",
+)
+def delete_plugin(name: str):
+    """Delete an uploaded plugin .jar file.
+
+    Returns 404 if the plugin does not exist.
+    """
+    safe_name = Path(name).name  # Sanitize against path traversal
+    file_path = PLUGINS_DIR / safe_name
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    if not file_path.is_file():
+        raise HTTPException(status_code=400, detail="Not a file")
+
+    file_path.unlink()
+    return {"deleted": True}
 
 
 # ─── Serve embedded webui ──────────────────────────────────────────────────────

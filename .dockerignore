@@ -1,6 +1,5 @@
 /.venv
 /.idea
-/integration_tests_reports
 /full_screenshots
 /cache
 /__pycache__

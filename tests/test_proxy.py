@@ -62,12 +62,14 @@ class TestGetProxyManager:
         assert get_proxy_manager(ProxyType.NONE) is None
 
     def test_velocity_returns_manager(self, tmp_path):
-        mgr = get_proxy_manager("velocity")
-        assert isinstance(mgr, VelocityProxyManager)
+        with patch("pathlib.Path.mkdir"):
+            mgr = get_proxy_manager("velocity")
+            assert isinstance(mgr, VelocityProxyManager)
 
     def test_velocity_via_enum(self, tmp_path):
-        mgr = get_proxy_manager(ProxyType.VELOCITY)
-        assert isinstance(mgr, VelocityProxyManager)
+        with patch("pathlib.Path.mkdir"):
+            mgr = get_proxy_manager(ProxyType.VELOCITY)
+            assert isinstance(mgr, VelocityProxyManager)
 
     def test_velocity_manager_uses_temp_cache(self, tmp_path):
         """VelocityProxyManager should create its cache directory."""
@@ -254,7 +256,7 @@ class TestVelocityProxyManagerConfig:
 
         assert config["bind"] == "0.0.0.0:25565"
         assert config["online_mode"] is False
-        assert config["player_info_forwarding_mode"] == "NONE"
+        assert config["player_info_forwarding_mode"] == "MODERN"
         assert config["servers"]["limbo"] == f"127.0.0.1:{pico_port}"
         assert config["servers"]["try"] == ["limbo"]
 
@@ -273,7 +275,7 @@ class TestVelocityProxyManagerConfig:
         # Verify key TOML entries
         assert f'bind = "0.0.0.0:25565"' in content
         assert "online-mode = false" in content
-        assert 'player-info-forwarding-mode = "NONE"' in content
+        assert 'player-info-forwarding-mode = "MODERN"' in content
         assert f"limbo = \"127.0.0.1:{pico_port}\"" in content
         assert 'try = ["limbo"]' in content
 

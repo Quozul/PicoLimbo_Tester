@@ -17,6 +17,7 @@ from ..minecraft.env import create_servers_dat
 from ..minecraft.input import VirtualInputController
 from ..minecraft.runner import test_single_version, empty_directory
 from ..proxy import get_proxy_manager
+from ..proxy.velocity import VelocityProxyManager
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +127,10 @@ _VELOCITY_TO_PICOLIMBO_METHOD = {
 }
 
 
-def _generate_pico_limbo_config(proxy_type: str, forwarding_method: str = "modern", forwarding_secret: str = "sup3r-s3cr3t") -> str:
+_DEFAULT_FORWARDING_SECRET = VelocityProxyManager._FORWARDING_SECRET
+
+
+def _generate_pico_limbo_config(proxy_type: str, forwarding_method: str = "modern") -> str:
     """Generate PicoLimbo server.toml content.
 
     For proxy mode, includes the [forwarding] section with the appropriate method.
@@ -137,9 +141,9 @@ def _generate_pico_limbo_config(proxy_type: str, forwarding_method: str = "moder
         lines.append(f'\n[forwarding]')
         lines.append(f'method = "{method}"')
         if forwarding_method == "bungeeguard":
-            lines.append(f'tokens = ["{forwarding_secret}"]')
+            lines.append(f'tokens = ["{_DEFAULT_FORWARDING_SECRET}"]')
         else:
-            lines.append(f'secret = "{forwarding_secret}"')
+            lines.append(f'secret = "{_DEFAULT_FORWARDING_SECRET}"')
         return "\n".join(lines)
     else:
         return SERVER_CONFIG_CONTENT
@@ -165,7 +169,8 @@ def _server_step(
 
     # Extract forwarding config from job
     forwarding_method = job.get("forwarding_method", "modern")
-    forwarding_secret = job.get("forwarding_secret", "sup3r-s3cr3t")
+    plugin = job.get("plugin")  # Legacy single plugin
+    plugins = job.get("plugins", [])  # New list of plugins
 
     # --- Proxy mode ---
     if proxy_type and proxy_type != "none":
@@ -177,12 +182,13 @@ def _server_step(
         proxy_config_dir = Path(tempfile.mkdtemp(prefix="velocity_config_"))
 
         # Start proxy first
-        logger.info("Job %s: starting proxy (%s)", job_id, proxy_type)
+        logger.info("Job %s: starting proxy (%s) with %d plugins", job_id, proxy_type, len(plugins))
         proxy_proc = proxy_manager.start(
             proxy_config_dir,
             PICO_LIMBO_INTERNAL_PORT,
             forwarding_method=forwarding_method,
-            forwarding_secret=forwarding_secret,
+            plugin=plugin,
+            plugins=plugins,
         )
         proxy_manager.wait_for_ready(proxy_proc)
         logger.info("Job %s: proxy is ready", job_id)
@@ -193,7 +199,7 @@ def _server_step(
 
     # Write PicoLimbo config with forwarding section if using a proxy
     config_path = Path("/tmp/server.toml")
-    config_path.write_text(_generate_pico_limbo_config(proxy_type, forwarding_method, forwarding_secret))
+    config_path.write_text(_generate_pico_limbo_config(proxy_type, forwarding_method))
 
     # Start PicoLimbo
     logger.info("Job %s: starting PicoLimbo server", job_id)
@@ -247,9 +253,11 @@ def _test_step(job: dict, versions: list[str], server_proc: Optional[subprocess.
     virtual_device = VirtualInputController()
 
     try:
+        login_wait_timeout = job.get("login_wait_timeout", 30)
         for version in versions:
             logger.info("Job %s: testing version %s", job_id, version)
-            result = test_single_version(version, commit_hash, virtual_device, SCREENSHOTS_DIR)
+            _update_job(job_id, current_step=f"testing:{version}")
+            result = test_single_version(version, commit_hash, virtual_device, SCREENSHOTS_DIR, login_wait_timeout)
             test_results[version] = result
 
             # Persist after each version so we don't lose progress

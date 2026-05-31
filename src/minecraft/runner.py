@@ -225,6 +225,7 @@ def test_single_version(
     commit_hash: str,
     virtual_device: VirtualInputController,
     screenshots_dir: str,
+    login_wait_timeout: int = 30,
 ) -> dict:
     """Test a single Minecraft version. Returns a test result dict."""
     logger.info("--- Starting test for version: %s ---", version)
@@ -243,7 +244,7 @@ def test_single_version(
         window_id = wait_for_game(version)
         virtual_device.set_window(window_id)
         log_to_multiplayer(version, virtual_device, window_id)
-        time.sleep(30)  # wait for the player to be logged in
+        time.sleep(login_wait_timeout)  # wait for the player to be logged in
         screenshot_path = capture_screenshot(
             version, commit_hash, window_id, screenshots_dir
         )
