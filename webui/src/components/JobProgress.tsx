@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import {
   createJobPoller,
   retryJob,
+  cancelJob,
   listScreenshots,
   getScreenshotUrl,
   type JobInfo,
@@ -16,6 +17,7 @@ import {
   XCircle,
   Clock,
   RotateCcw,
+  Square,
   AlertTriangle,
   Download,
   ExternalLink,
@@ -196,6 +198,23 @@ export function JobProgress({ job }: JobProgressProps) {
     }
   }, [currentJob.job_id])
 
+  const handleCancel = useCallback(async () => {
+    setLoading(true)
+    try {
+      const updated = await cancelJob(currentJob.job_id)
+      setCurrentJob(updated)
+      // Restart polling for the cancelled job
+      pollerRef.current?.stop()
+      pollerRef.current = createJobPoller(updated.job_id, (newJob) => {
+        setCurrentJob(newJob)
+      })
+    } catch {
+      // Error handling via UI
+    } finally {
+      setLoading(false)
+    }
+  }, [currentJob.job_id])
+
   const overallProgress = getOverallProgress(currentJob)
   const passed = (
     Object.values(currentJob.test_results) as { passed: boolean }[]
@@ -230,6 +249,22 @@ export function JobProgress({ job }: JobProgressProps) {
           <span className="font-mono text-[10px] text-muted-foreground">
             {currentJob.job_id}
           </span>
+          {["queued", "building", "testing"].includes(currentJob.status) && (
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={handleCancel}
+              disabled={loading}
+              className="h-5 gap-1 px-1.5 text-[10px] text-destructive hover:bg-destructive/10"
+            >
+              {loading ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <Square className="size-3" />
+              )}
+              Cancel
+            </Button>
+          )}
           {["finished", "failed"].includes(currentJob.status) && (
             <Button
               variant="outline"

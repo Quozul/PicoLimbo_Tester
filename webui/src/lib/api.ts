@@ -26,7 +26,7 @@ export const TestResultSchema = z.object({
 
 export const JobInfoSchema = z.object({
   job_id: z.string(),
-  status: z.enum(["queued", "building", "testing", "finished", "failed"]),
+  status: z.enum(["queued", "building", "testing", "finished", "failed", "cancelled"]),
   repo_url: z.string(),
   ref: z.string(),
   owner: z.string(),
@@ -160,6 +160,13 @@ export async function retryJob(jobId: string): Promise<JobInfo> {
   return JobInfoSchema.parse(data)
 }
 
+export async function cancelJob(jobId: string): Promise<JobInfo> {
+  const data = await request<JobInfo>(`POST`, `/jobs/${jobId}/cancel`, {
+    method: "POST",
+  })
+  return JobInfoSchema.parse(data)
+}
+
 /**
  * POST /plugins/upload
  * Upload a Velocity plugin .jar file.
@@ -236,7 +243,7 @@ export function createJobPoller(
       try {
         const job = await getJob(jobId)
         onStatusChange(job)
-        if (["finished", "failed"].includes(job.status)) {
+        if (["finished", "failed", "cancelled"].includes(job.status)) {
           onComplete?.(job)
           running = false
           return

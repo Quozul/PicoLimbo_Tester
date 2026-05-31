@@ -357,3 +357,30 @@ def retry_job(job_id: str):
 
     updated = database.update_job(job_id, status="queued", current_step=None)
     return updated
+
+
+@app.post(
+    "/jobs/{job_id}/cancel",
+    response_model=JobInfo,
+    status_code=200,
+    summary="Cancel a running job",
+)
+def cancel_job(job_id: str):
+    """Cancel a running job.
+
+    Only allows cancelling jobs with status 'queued', 'building', or 'testing'.
+    Returns 400 if the job is already finished or failed.
+    Returns 404 if the job does not exist.
+    """
+    job = database.get_job_by_id(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job["status"] not in ("queued", "building", "testing"):
+        raise HTTPException(
+            status_code=400,
+            detail="Job cannot be cancelled in current state",
+        )
+
+    updated = database.update_job(job_id, status="cancelled")
+    return updated

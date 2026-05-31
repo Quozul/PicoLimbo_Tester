@@ -255,6 +255,10 @@ def _test_step(job: dict, versions: list[str], server_proc: Optional[subprocess.
     try:
         login_wait_timeout = job.get("login_wait_timeout", 30)
         for version in versions:
+            current = database.get_job_by_id(job_id)
+            if current and current["status"] == "cancelled":
+                database.update_job(job_id, status="failed", error_message="Job was cancelled")
+                return test_results
             logger.info("Job %s: testing version %s", job_id, version)
             _update_job(job_id, current_step=f"testing:{version}")
             result = test_single_version(version, commit_hash, virtual_device, SCREENSHOTS_DIR, login_wait_timeout)
