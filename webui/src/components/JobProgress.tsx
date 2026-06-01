@@ -121,7 +121,7 @@ export function JobProgress({ job }: JobProgressProps) {
         const urlMap = new Map<string, string>()
         Object.entries(updated.test_results).forEach(([key, result]) => {
           if ((result as any).screenshot_path) {
-            urlMap.set(key, `/api/jobs/${updated.job_id}/screenshots/${key}`)
+            urlMap.set(key, `/jobs/${updated.job_id}/screenshots/${key}`)
           }
         })
         setScreenshotUrls(urlMap)
@@ -139,7 +139,7 @@ export function JobProgress({ job }: JobProgressProps) {
       const urlMap = new Map<string, string>()
       Object.entries(job.test_results).forEach(([key, result]) => {
         if ((result as any).screenshot_path) {
-          urlMap.set(key, `/api/jobs/${job.job_id}/screenshots/${key}`)
+          urlMap.set(key, `/jobs/${job.job_id}/screenshots/${key}`)
         }
       })
       setScreenshotUrls(urlMap)

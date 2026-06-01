@@ -25,7 +25,7 @@ export function ScreenshotViewer({ job }: ScreenshotViewerProps) {
     const map = new Map<string, string>()
     Object.entries(jobData.test_results).forEach(([key, result]) => {
       if ((result as any).screenshot_path) {
-        map.set(key, `/api/jobs/${jobData.job_id}/screenshots/${key}`)
+        map.set(key, `/jobs/${jobData.job_id}/screenshots/${key}`)
       }
     })
     setScreenshotUrls(map)
@@ -119,7 +119,7 @@ export function ScreenshotViewer({ job }: ScreenshotViewerProps) {
                   onClick={() => openModal(id)}
                 >
                   <img
-                    src={`/api/jobs/${job.job_id}/screenshots/${id}`}
+                    src={`/jobs/${job.job_id}/screenshots/${id}`}
                     alt={`Screenshot ${id}`}
                     className="aspect-video h-auto w-full object-cover"
                     loading="lazy"
@@ -171,7 +171,7 @@ export function ScreenshotViewer({ job }: ScreenshotViewerProps) {
               <span className="font-mono text-xs">{selectedScreenshot}</span>
               <div className="flex items-center gap-2">
                 <a
-                  href={`/api/jobs/${job.job_id}/screenshots/${selectedScreenshot}`}
+                  href={`/jobs/${job.job_id}/screenshots/${selectedScreenshot}`}
                   download
                   className="flex h-6 items-center gap-1 rounded-none border border-border bg-transparent px-2 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
@@ -189,7 +189,7 @@ export function ScreenshotViewer({ job }: ScreenshotViewerProps) {
             {/* Image */}
             <div className="flex-1 overflow-auto p-2">
               <img
-                src={`/api/jobs/${job.job_id}/screenshots/${selectedScreenshot}`}
+                src={`/jobs/${job.job_id}/screenshots/${selectedScreenshot}`}
                 alt={`Screenshot ${selectedScreenshot}`}
                 className="max-h-[80vh] max-w-full object-contain"
               />
