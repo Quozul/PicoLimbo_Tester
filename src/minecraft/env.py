@@ -10,7 +10,7 @@ from typing import List
 
 from nbtlib import File, List as NbtList, Compound, String, Byte
 from .. import config
-from ..versions import Version
+from ..versions import Version, VersionSupport
 
 logger = logging.getLogger(__name__)
 
@@ -25,16 +25,17 @@ def create_options_txt(version: Version, output_file_path: str) -> None:
     logger.debug("Generating options.txt for Minecraft %s", version)
 
     options: List[str] = []
+    support = VersionSupport()
 
-    if version.supports_option("skipMultiplayerWarning"):
+    if support.supports_option("skipMultiplayerWarning", version):
         logger.debug("  skipMultiplayerWarning: true")
         options.append("skipMultiplayerWarning:true")
 
-    if version.supports_option("tutorialStep"):
+    if support.supports_option("tutorialStep", version):
         logger.debug("  tutorialStep: none")
         options.append("tutorialStep:none")
 
-    if version.supports_option("joinedFirstServer"):
+    if support.supports_option("joinedFirstServer", version):
         logger.debug("  joinedFirstServer: true")
         options.append("joinedFirstServer:true")
 

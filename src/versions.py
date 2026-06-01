@@ -1,120 +1,160 @@
+"""Minecraft version representation and support utilities.
+
+Version is a pure immutable value object. Comparison is based on the
+(major, minor, patch) tuple.
+
+VersionSupport provides static utility methods for version-specific
+feature checks (option support, LWJGL version detection).
+"""
+
+from __future__ import annotations
+
+
 class Version:
-    def __new__(cls, major: int | str, minor: int | None = None, patch: int | None = None, protocol_version: int | None = None):
+    """Immutable value object representing a Minecraft version.
+
+    Supports both string form (e.g. ``"1.21.1"``) and integer form
+    (e.g. ``Version(1, 21, 1, 767)``).  Comparison is based on the
+    ``major`` / ``minor`` / ``patch`` components only.
+
+    :param major: Major version number.
+    :param minor: Minor version number.
+    :param patch: Patch version number.
+    :param protocol_version: Minecraft protocol version number.
+    """
+
+    __slots__ = ("_major", "_minor", "_patch", "protocol_version")
+
+    def __init__(
+        self,
+        major: int,
+        minor: int = 0,
+        patch: int = 0,
+        protocol_version: int = 0,
+    ) -> None:
+        self._major = major
+        self._minor = minor
+        self._patch = patch
+        self.protocol_version = protocol_version
+
+    @classmethod
+    def from_string(cls, version_str: str) -> "Version":
+        """Parse a version string like ``"1.21.1"`` or ``"1.21"``.
+
+        :param version_str: Version string in ``major.minor[.patch]`` form.
+        :return: A new ``Version`` instance.
+        :raises ValueError: If the string cannot be split into version parts.
         """
-        Create a Version instance.
+        parts = version_str.split(".")
+        major = int(parts[0])
+        minor = int(parts[1]) if len(parts) > 1 else 0
+        patch = int(parts[2]) if len(parts) > 2 else 0
+        return cls(major, minor, patch)
 
-        Two usage patterns:
+    @property
+    def major(self) -> int:
+        return self._major
 
-        1. **String form** — automatically looks up the protocol version::
+    @property
+    def minor(self) -> int:
+        return self._minor
 
-            >>> Version("1.16.5")
-            Version(1, 16, 5, 754)
-            >>> Version("26.1.2")
-            Version(26, 1, 2, 775)
+    @property
+    def patch(self) -> int:
+        return self._patch
 
-            Accepts "major.minor" or "major.minor.patch". Raises ``ValueError``
-            if the version is not in ``ALL_VERSIONS``.
-
-        2. **Integer form** — all four arguments required::
-
-            >>> Version(1, 12, 2, 340)
-            Version(1, 12, 2, 340)
-
-            Raises ``TypeError`` if any of ``minor``, ``patch``, or
-            ``protocol_version`` is omitted.
-
-        :param major: Major version number (int) or full version string (e.g. "1.16.5")
-        :param minor: Minor version number (int, required for integer form)
-        :param patch: Patch version number (int, required for integer form)
-        :param protocol_version: Minecraft protocol version (int, required for integer form)
-        :return: A new Version instance
-        :raises ValueError: If the version string is not found in ALL_VERSIONS
-        :raises TypeError: If integer form is used without all three remaining arguments
-        """
-        if isinstance(major, str):
-            # String form: "1.16.5" or "1.16"
-            parts = major.split(".")
-            major = int(parts[0])
-            minor = int(parts[1])
-            patch = int(parts[2]) if len(parts) > 2 else 0
-
-            # Look up protocol version from ALL_VERSIONS
-            for v in ALL_VERSIONS:
-                if v.major == major and v.minor == minor and v.patch == patch:
-                    protocol_version = v.protocol_version
-                    break
-            if protocol_version is None:
-                raise ValueError(
-                    f"Unknown version: {major}.{minor}.{patch}. "
-                    f"Supported versions: {', '.join(str(v) for v in ALL_VERSIONS)}"
-                )
-
-        if minor is None or patch is None or protocol_version is None:
-            raise TypeError(
-                "Version() requires all arguments when called with integers: "
-                "Version(major, minor, patch, protocol_version)"
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, Version):
+            return (self._major, self._minor, self._patch) == (
+                other._major,
+                other._minor,
+                other._patch,
             )
+        return NotImplemented
 
-        instance = super().__new__(cls)
-        instance.major = major
-        instance.minor = minor
-        instance.patch = patch
-        instance.protocol_version = protocol_version
-        return instance
+    def __lt__(self, other: object) -> bool:
+        if isinstance(other, Version):
+            return (self._major, self._minor, self._patch) < (
+                other._major,
+                other._minor,
+                other._patch,
+            )
+        return NotImplemented
 
-    def __repr__(self):
-        return f"Version({self.major}, {self.minor}, {self.patch}, {self.protocol_version})"
+    def __le__(self, other: object) -> bool:
+        if isinstance(other, Version):
+            return (self._major, self._minor, self._patch) <= (
+                other._major,
+                other._minor,
+                other._patch,
+            )
+        return NotImplemented
 
-    def __str__(self):
-        if self.patch == 0:
-            return str(self.major) + "." + str(self.minor)
-        return str(self.major) + "." + str(self.minor) + "." + str(self.patch)
+    def __hash__(self) -> int:
+        return hash((self._major, self._minor, self._patch))
 
-    def _cmp(self, other: "Version") -> int:
-        """Compare this version with another. Returns -1, 0, or 1."""
-        if (self.major, self.minor, self.patch) < (
-            other.major,
-            other.minor,
-            other.patch,
-        ):
-            return -1
-        elif (self.major, self.minor, self.patch) > (
-            other.major,
-            other.minor,
-            other.patch,
-        ):
-            return 1
-        return 0
+    def __repr__(self) -> str:
+        return (
+            f"Version({self._major}, {self._minor}, {self._patch}, "
+            f"{self.protocol_version})"
+        )
 
-    def supports_option(self, option_name: str) -> bool:
+    def __str__(self) -> str:
+        if self._patch == 0:
+            return f"{self._major}.{self._minor}"
+        return f"{self._major}.{self._minor}.{self._patch}"
+
+
+class VersionSupport:
+    """Utility class for version-specific feature checks.
+
+    All methods are stateless and can be used as functions or via an
+    instance.  They compare against the ``(major, minor, patch)`` tuple
+    so no sentinel ``Version`` objects are needed.
+    """
+
+    # -- option support thresholds ------------------------------------------
+
+    _OPTION_SUPPORT: dict[str, tuple[int, ...]] = {
+        "skipMultiplayerWarning": (1, 15, 2),
+        "tutorialStep": (1, 12, 0),
+        "joinedFirstServer": (1, 16, 4),
+    }
+
+    def supports_option(self, option: str, version: Version) -> bool:
+        """Check if *version* supports the given option.
+
+        :param option: Option name (``skipMultiplayerWarning``,
+            ``tutorialStep``, ``joinedFirstServer``).
+        :param version: Minecraft version to check.
+        :return: ``True`` if the version supports the option.
+        :raises ValueError: If the option name is not recognised.
         """
-        This method checks if the given option is supported.
-        Only supports the following option names:
-            - skipMultiplayerWarning, introduced in 1.15.2
-            - tutorialStep, introduced in 1.12
-            - joinedFirstServer, introduced in 1.16.4
-        :param option_name: The name of the option
-        :return: If the option is supported
+        threshold = self._OPTION_SUPPORT.get(option)
+        if threshold is None:
+            raise ValueError(f"Unsupported option: {option}")
+        return (version.major, version.minor, version.patch) >= threshold
+
+    # -- LWJGL detection ----------------------------------------------------
+
+    def is_lwjgl2(self, version: Version) -> bool:
+        """Check if *version* uses LWJGL 2.
+
+        LWJGL 2 is used by Minecraft 1.7 – 1.12.x.  LWJGL 3 starts
+        from 1.13.
+
+        :param version: Minecraft version to check.
+        :return: ``True`` if the version uses LWJGL 2.
         """
-        if option_name == "skipMultiplayerWarning":
-            return self._cmp(Version(1, 15, 2, 0)) >= 0
-        elif option_name == "tutorialStep":
-            return self._cmp(Version(1, 12, 0, 0)) >= 0
-        elif option_name == "joinedFirstServer":
-            return self._cmp(Version(1, 16, 4, 754)) >= 0
-        raise ValueError(f"Unsupported option: {option_name}")
-
-    def is_lwjgl2(self) -> bool:
-        """
-        LWJGL 2 is used by Minecraft 1.7–1.12.X.
-        LWJGL 3 is used starting 1.13.
-
-        :return: If the version supports LWJGL 2
-        """
-        return self._cmp(Version(1, 7, 0, 0)) >= 0 > self._cmp(Version(1, 13, 0, 0))
+        v = (version.major, version.minor, version.patch)
+        return v >= (1, 7, 0) and v < (1, 13, 0)
 
 
-ALL_VERSIONS = [
+# ---------------------------------------------------------------------------
+# Module-level data (kept for backward compatibility and as the canonical list)
+# ---------------------------------------------------------------------------
+
+ALL_VERSIONS: list[Version] = [
     Version(major=1, minor=7, patch=2, protocol_version=4),
     Version(major=1, minor=7, patch=4, protocol_version=4),
     Version(major=1, minor=7, patch=5, protocol_version=4),
@@ -199,7 +239,7 @@ ALL_VERSIONS = [
 ]
 
 # First version for each unique protocol version, derived from ALL_VERSIONS.
-PROTOCOL_VERSIONS = [
+PROTOCOL_VERSIONS: list[Version] = [
     v
     for i, v in enumerate(ALL_VERSIONS)
     if i == 0 or v.protocol_version != ALL_VERSIONS[i - 1].protocol_version
