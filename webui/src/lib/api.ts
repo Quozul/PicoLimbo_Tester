@@ -43,13 +43,6 @@ export const JobInfoSchema = z.object({
   login_wait_timeout: z.number().int().positive().optional().default(30),
 })
 
-export const ScreenshotItemSchema = z.object({
-  screenshot_id: z.string(),
-  version: z.string(),
-  path: z.string(),
-  passed: z.boolean(),
-})
-
 export type JobCreateInput = z.infer<typeof JobCreateSchema>
 
 export const ProxyOptions = [
@@ -58,7 +51,6 @@ export const ProxyOptions = [
 ] as const
 export type JobInfo = z.infer<typeof JobInfoSchema>
 export type TestResult = z.infer<typeof TestResultSchema>
-export type ScreenshotItem = z.infer<typeof ScreenshotItemSchema>
 
 // ─── API Client ────────────────────────────────────────────────────────────────
 
@@ -125,28 +117,6 @@ export async function listJobs(options?: {
   const query = params.toString() ? `?${params}` : ""
   const data = await request<JobInfo[]>(`GET`, `/jobs${query}`)
   return data.map((j) => JobInfoSchema.parse(j))
-}
-
-/**
- * GET /jobs/{job_id}/screenshots
- * List all screenshots for a job.
- */
-export async function listScreenshots(
-  jobId: string
-): Promise<ScreenshotItem[]> {
-  const data = await request<ScreenshotItem[]>(
-    `GET`,
-    `/jobs/${jobId}/screenshots`
-  )
-  return data.map((s) => ScreenshotItemSchema.parse(s))
-}
-
-/**
- * GET /jobs/{job_id}/screenshots/{screenshot_id}
- * Download a specific screenshot by version.
- */
-export function getScreenshotUrl(jobId: string, screenshotId: string): string {
-  return `${API_BASE}/jobs/${jobId}/screenshots/${screenshotId}`
 }
 
 /**

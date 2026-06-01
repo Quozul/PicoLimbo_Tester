@@ -314,78 +314,12 @@ class TestGetArtifact:
 # ===========================================================================
 # GET /jobs/{job_id}/screenshots
 # ===========================================================================
-
-class TestListScreenshots:
-
-    def test_returns_screenshots_with_screenshot_path(self, client):
-        job = _make_job(
-            job_id="job-1",
-            status="finished",
-            test_results={
-                "1.20": {
-                    "version": "1.20",
-                    "passed": True,
-                    "screenshot_path": "/tmp/snap1.png",
-                },
-                "1.19": {
-                    "version": "1.19",
-                    "passed": False,
-                    "screenshot_path": "/tmp/snap2.png",
-                },
-            },
-        )
-        mock_database.get_job_by_id.return_value = job
-
-        resp = client.get("/jobs/job-1/screenshots")
-
-        assert resp.status_code == 200
-        data = resp.json()
-        assert len(data) == 2
-        assert data[0]["screenshot_id"] == "1.20"
-        assert data[0]["version"] == "1.20"
-        assert data[0]["path"] == "/tmp/snap1.png"
-        assert data[0]["passed"] is True
-
-    def test_returns_empty_list_when_no_test_results(self, client):
-        job = _make_job(job_id="job-1", status="queued", test_results=None)
-        mock_database.get_job_by_id.return_value = job
-
-        resp = client.get("/jobs/job-1/screenshots")
-
-        assert resp.status_code == 200
-        assert resp.json() == []
-
-    def test_returns_empty_list_when_no_screenshots(self, client):
-        job = _make_job(
-            job_id="job-1",
-            status="finished",
-            test_results={
-                "1.20": {"version": "1.20", "passed": True, "screenshot_path": None},
-            },
-        )
-        mock_database.get_job_by_id.return_value = job
-
-        resp = client.get("/jobs/job-1/screenshots")
-
-        assert resp.status_code == 200
-        assert resp.json() == []
-
-    def test_returns_404_when_job_not_found(self, client):
-        mock_database.get_job_by_id.return_value = None
-
-        resp = client.get("/jobs/nonexistent/screenshots")
-
-        assert resp.status_code == 404
-        assert resp.json()["detail"] == "Job not found"
-
-
-# ===========================================================================
 # GET /jobs/{job_id}/screenshots/{screenshot_id}
 # ===========================================================================
 
 class TestGetScreenshot:
 
-    def test_returns_file_response_when_screenshot_exists(self, client):
+    def test_returns_inline_image_when_screenshot_exists(self, client):
         fd, tmp_path = tempfile.mkstemp(suffix=".png", prefix="snap_")
         os.close(fd)
         try:

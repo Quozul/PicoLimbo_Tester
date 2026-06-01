@@ -129,38 +129,11 @@ def get_artifact(job_id: str):
 
 
 @app.get(
-    "/jobs/{job_id}/screenshots",
-    summary="List screenshots for a job",
-)
-def list_screenshots(job_id: str):
-    """List all screenshots taken during testing for this job.
-
-    Returns 404 if the job does not exist.
-    """
-    job = database.get_job_by_id(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
-
-    test_results = job.get("test_results") or {}
-    screenshots = []
-    for version, result in test_results.items():
-        if result.get("screenshot_path"):
-            screenshots.append({
-                "screenshot_id": version,
-                "version": version,
-                "path": result["screenshot_path"],
-                "passed": result.get("passed", False),
-            })
-
-    return screenshots
-
-
-@app.get(
     "/jobs/{job_id}/screenshots/{screenshot_id}",
     summary="Download a specific screenshot",
 )
 def get_screenshot(job_id: str, screenshot_id: str):
-    """Download a specific screenshot by version (screenshot_id = version string).
+    """Return a specific screenshot by version (screenshot_id = version string).
 
     Returns 404 if the job or screenshot does not exist.
     """
@@ -177,11 +150,8 @@ def get_screenshot(job_id: str, screenshot_id: str):
     if not screenshot_path.exists():
         raise HTTPException(status_code=404, detail="Screenshot file not found on disk")
 
-    return FileResponse(
-        path=str(screenshot_path),
-        media_type="image/png",
-        filename=f"{screenshot_id}.png",
-    )
+    screenshot_data = screenshot_path.read_bytes()
+    return Response(content=screenshot_data, media_type="image/png")
 
 
 @app.get(
