@@ -3,16 +3,15 @@
 import logging
 import re
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Optional
 
-from .. import database
 from .. import config
+from .. import database
+from ..infrastructure import git_repository as git_repo_module
 
 logger = logging.getLogger(__name__)
 
-REPOS_DIR = config.REPOS_DIR
 BUILDS_DIR = config.BUILDS_DIR
 
 # GitHub URL pattern: https://github.com/{owner}/{repo} (with or without .git)
@@ -22,6 +21,17 @@ GITHUB_URL_RE = re.compile(
 
 # Git commit hash: 40-character hex string
 COMMIT_HASH_RE = re.compile(r"^[0-9a-fA-F]{40}$")
+
+# Module-level GitRepository instance (lazy-initialised on first use)
+_git_repo: git_repo_module.GitRepository | None = None
+
+
+def _get_git_repo() -> git_repo_module.GitRepository:
+    """Return the module-level GitRepository, creating it lazily."""
+    global _git_repo
+    if _git_repo is None:
+        _git_repo = git_repo_module.GitRepository(repos_dir=config.REPOS_DIR)
+    return _git_repo
 
 
 def extract_owner_from_url(repo_url: str) -> tuple[str, str]:
@@ -48,70 +58,6 @@ def is_commit_hash(ref: str) -> bool:
     return bool(COMMIT_HASH_RE.match(ref))
 
 
-def _run(cmd: list[str], cwd: Path) -> str:
-    """Run a command and return stdout."""
-    logger.info("Running: %s (cwd=%s)", " ".join(cmd), cwd)
-    result = subprocess.run(
-        cmd,
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        timeout=1800,  # 30 minutes max
-    )
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"Command failed (exit {result.returncode}): {' '.join(cmd)}\n"
-            f"stderr: {result.stderr.strip()}"
-        )
-    return result.stdout.strip()
-
-
-def ensure_repo_cloned(owner: str, repo_name: str) -> Path:
-    """Clone the repo if it doesn't exist, otherwise return existing path."""
-    repo_path = REPOS_DIR / owner / repo_name
-    if repo_path.exists() and (repo_path / ".git").exists():
-        logger.info("Repo already cloned at %s", repo_path)
-    else:
-        repo_path.parent.mkdir(parents=True, exist_ok=True)
-        _run(
-            ["git", "clone", "--depth", "1",
-             f"https://github.com/{owner}/{repo_name}.git",
-             str(repo_path)],
-            cwd=Path.home(),
-        )
-        logger.info("Cloned repo to %s", repo_path)
-    return repo_path
-
-
-def update_repo(repo_path: Path, ref: str) -> None:
-    """Update an existing repo: fetch latest and checkout the ref."""
-    logger.info("Updating repo at %s (ref=%s)", repo_path, ref)
-    _run(["git", "fetch", "--depth=1", "origin", ref], cwd=repo_path)
-    _run(["git", "checkout", "FETCH_HEAD"], cwd=repo_path)
-    logger.info("Repo updated at %s", repo_path)
-
-
-def resolve_commit(repo_path: Path, ref: str) -> str:
-    """Resolve a ref (branch name or commit hash) to a commit hash.
-
-    If ref is a branch, fetches latest and checks it out.
-    If ref is a commit hash, checks it out directly.
-    """
-    if is_commit_hash(ref):
-        commit_hash = ref
-        _run(["git", "checkout", ref], cwd=repo_path)
-        logger.info("Checked out commit %s", commit_hash)
-    else:
-        # Fetch the specific branch with depth=1 (shallow clone friendly)
-        _run(["git", "fetch", "--depth=1", "origin", ref], cwd=repo_path)
-        _run(["git", "checkout", "FETCH_HEAD"], cwd=repo_path)
-        # Resolve to full commit hash
-        output = _run(["git", "rev-parse", "HEAD"], cwd=repo_path)
-        commit_hash = output
-        logger.info("Branch '%s' resolved to commit %s", ref, commit_hash)
-    return commit_hash
-
-
 def build_project(repo_path: Path, commit_hash: str, owner: str, ref: str) -> str:
     """Build PicoLimbo with cargo. Returns the artifact path."""
     artifact_dir = BUILDS_DIR / owner / ref / commit_hash
@@ -122,7 +68,7 @@ def build_project(repo_path: Path, commit_hash: str, owner: str, ref: str) -> st
         logger.info("Artifact already exists at %s", artifact_path)
         return str(artifact_path)
 
-    _run(["cargo", "build", "--release"], cwd=repo_path)
+    _get_git_repo()._run_git(["cargo", "build", "--release"], cwd=repo_path)
 
     # Copy artifact to our builds directory for persistence
     source = repo_path / "target" / "release" / "pico_limbo"
@@ -159,10 +105,10 @@ def create_job(
     owner, repo_name = extract_owner_from_url(repo_url)
 
     # Ensure repo is cloned (or already exists)
-    repo_path = ensure_repo_cloned(owner, repo_name)
+    repo_path = _get_git_repo().clone(owner, repo_name)
 
     # Resolve commit hash
-    commit_hash = resolve_commit(repo_path, ref)
+    commit_hash = _get_git_repo().resolve(repo_path, ref)
 
     # Always create a new job - step-level logic handles skipping
     job = database.create_job(
