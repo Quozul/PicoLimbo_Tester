@@ -1,10 +1,7 @@
 import { useState, useEffect, useCallback } from "react"
 import {
-  listScreenshots,
   createJobPoller,
-  getScreenshotUrl,
   type JobInfo,
-  type ScreenshotItem,
 } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { ALL_VERSIONS } from "@/lib/versions"
@@ -15,7 +12,7 @@ interface ScreenshotViewerProps {
 }
 
 export function ScreenshotViewer({ job }: ScreenshotViewerProps) {
-  const [screenshots, setScreenshots] = useState<Map<string, ScreenshotItem>>(
+  const [screenshotUrls, setScreenshotUrls] = useState<Map<string, string>>(
     new Map()
   )
   const [visible, setVisible] = useState<Set<string>>(new Set())
@@ -24,29 +21,26 @@ export function ScreenshotViewer({ job }: ScreenshotViewerProps) {
   )
   const [loading, setLoading] = useState(true)
 
-  const fetchScreenshots = useCallback(async () => {
-    try {
-      const list = await listScreenshots(job.job_id)
-      const map = new Map<string, ScreenshotItem>()
-      list.forEach((s) => map.set(s.screenshot_id, s))
-      setScreenshots(map)
-      setLoading(false)
-    } catch {
-      setLoading(false)
-    }
-  }, [job.job_id])
+  const buildScreenshotMap = useCallback((jobData: JobInfo) => {
+    const map = new Map<string, string>()
+    Object.entries(jobData.test_results).forEach(([key, result]) => {
+      if ((result as any).screenshot_path) {
+        map.set(key, `/api/jobs/${jobData.job_id}/screenshots/${key}`)
+      }
+    })
+    setScreenshotUrls(map)
+  }, [])
 
   useEffect(() => {
-    fetchScreenshots()
+    buildScreenshotMap(job)
+    setLoading(false)
 
-    const poller = createJobPoller(job.job_id, async (updatedJob) => {
-      if (updatedJob.status === "testing" || updatedJob.status === "building") {
-        fetchScreenshots()
-      }
+    const poller = createJobPoller(job.job_id, (updatedJob) => {
+      buildScreenshotMap(updatedJob)
     })
 
     return () => poller.stop()
-  }, [job.job_id, fetchScreenshots])
+  }, [job.job_id, buildScreenshotMap])
 
   const toggleVisible = useCallback((version: string) => {
     setVisible((prev) => {
@@ -66,7 +60,7 @@ export function ScreenshotViewer({ job }: ScreenshotViewerProps) {
   }, [])
 
   // Filter to only visible screenshots, sorted by version
-  const visibleItems = Array.from(screenshots.entries())
+  const visibleItems = Array.from(screenshotUrls.entries())
     .filter(([id]) => visible.has(id))
     .sort((a, b) => {
       const verA = ALL_VERSIONS.find((v) => v.label === a[0])
@@ -89,7 +83,7 @@ export function ScreenshotViewer({ job }: ScreenshotViewerProps) {
     )
   }
 
-  if (screenshots.size === 0) {
+  if (screenshotUrls.size === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-2 py-8 text-xs text-muted-foreground">
         <EyeOff className="size-8 opacity-30" />
@@ -112,21 +106,24 @@ export function ScreenshotViewer({ job }: ScreenshotViewerProps) {
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-1.5">
-            {visibleItems.map(([id, item]) => (
-              <div
-                key={id}
-                className={cn(
-                  "group relative cursor-pointer overflow-hidden border border-border bg-muted/20 transition-all hover:border-primary/50 hover:shadow-sm",
-                  item.passed === false ? "border-destructive/30" : ""
-                )}
-                onClick={() => openModal(id)}
-              >
-                <img
-                  src={getScreenshotUrl(job.job_id, id)}
-                  alt={`Screenshot ${id}`}
-                  className="aspect-video h-auto w-full object-cover"
-                  loading="lazy"
-                />
+            {visibleItems.map(([id]) => {
+              const result = job.test_results[id]
+              const passed = result?.passed
+              return (
+                <div
+                  key={id}
+                  className={cn(
+                    "group relative cursor-pointer overflow-hidden border border-border bg-muted/20 transition-all hover:border-primary/50 hover:shadow-sm",
+                    passed === false ? "border-destructive/30" : ""
+                  )}
+                  onClick={() => openModal(id)}
+                >
+                  <img
+                    src={`/api/jobs/${job.job_id}/screenshots/${id}`}
+                    alt={`Screenshot ${id}`}
+                    className="aspect-video h-auto w-full object-cover"
+                    loading="lazy"
+                  />
                 {/* Overlay */}
                 <div className="absolute inset-0 flex items-end bg-black/0 transition-colors group-hover:bg-black/30">
                   <div className="w-full bg-gradient-to-t from-black/70 to-transparent px-1.5 py-1">
@@ -134,7 +131,7 @@ export function ScreenshotViewer({ job }: ScreenshotViewerProps) {
                       <span className="font-mono text-[10px] text-white/90">
                         {id}
                       </span>
-                      {item.passed === false && (
+                      {passed === false && (
                         <span className="text-[10px] text-destructive">
                           FAIL
                         </span>
@@ -152,8 +149,9 @@ export function ScreenshotViewer({ job }: ScreenshotViewerProps) {
                 >
                   <Eye className="size-3 text-white" />
                 </button>
-              </div>
-            ))}
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
@@ -173,7 +171,7 @@ export function ScreenshotViewer({ job }: ScreenshotViewerProps) {
               <span className="font-mono text-xs">{selectedScreenshot}</span>
               <div className="flex items-center gap-2">
                 <a
-                  href={getScreenshotUrlLocal(job.job_id, selectedScreenshot)}
+                  href={`/api/jobs/${job.job_id}/screenshots/${selectedScreenshot}`}
                   download
                   className="flex h-6 items-center gap-1 rounded-none border border-border bg-transparent px-2 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
@@ -191,7 +189,7 @@ export function ScreenshotViewer({ job }: ScreenshotViewerProps) {
             {/* Image */}
             <div className="flex-1 overflow-auto p-2">
               <img
-                src={getScreenshotUrlLocal(job.job_id, selectedScreenshot)}
+                src={`/api/jobs/${job.job_id}/screenshots/${selectedScreenshot}`}
                 alt={`Screenshot ${selectedScreenshot}`}
                 className="max-h-[80vh] max-w-full object-contain"
               />
@@ -201,9 +199,4 @@ export function ScreenshotViewer({ job }: ScreenshotViewerProps) {
       )}
     </>
   )
-}
-
-function getScreenshotUrlLocal(jobId: string, screenshotId: string): string {
-  const API_BASE = import.meta.env.VITE_API_URL || "/api"
-  return `${API_BASE}/jobs/${jobId}/screenshots/${screenshotId}`
 }
