@@ -1,10 +1,17 @@
+"""Tests for the backwards-compatible :func:`wait_for_screen_region` function.
+
+The actual logic lives in :class:`src.infrastructure.screen_region.ScreenRegionMatcher`.
+These tests verify that the thin wrapper in ``src.minecraft.wait_for`` delegates
+correctly.
+"""
+
 import os
 import time
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.minecraft.wait_for import wait_for_screen_region
+from src.infrastructure.screen_region import VALID_EXTENSIONS
 
 
 # ---------------------------------------------------------------------------
@@ -34,7 +41,7 @@ def _patch_image_open_with_sizes(tmp_path, size_map: dict[str, tuple[int, int]])
         mock.convert.return_value = mock
         return mock
 
-    return patch("src.minecraft.wait_for.Image.open", side_effect=_open_side_effect)
+    return patch("src.infrastructure.screen_region.Image.open", side_effect=_open_side_effect)
 
 
 def _make_mock_image(size: tuple[int, int] = (100, 100)) -> MagicMock:
@@ -46,38 +53,81 @@ def _make_mock_image(size: tuple[int, int] = (100, 100)) -> MagicMock:
 
 
 # ---------------------------------------------------------------------------
+# Patch targets — the logic now lives in screen_region, not wait_for
+# ---------------------------------------------------------------------------
+
+_GRAB_TARGET = "src.infrastructure.screen_region.ImageGrab.grab"
+_DIFF_TARGET = "src.infrastructure.screen_region.ImageChops.difference"
+_SLEEP_TARGET = "src.infrastructure.screen_region.time.sleep"
+_MONO_TARGET = "src.infrastructure.screen_region.time.monotonic"
+
+
+def _patch_all(tmp_path, size_map, grab_img, diff_result=None,
+               monotonic_values=None, sleep_count=1):
+    """Return a context manager that patches everything needed."""
+    if diff_result is None:
+        diff_result = MagicMock(getbbox=lambda: (0, 0, 1, 1))
+
+    if monotonic_values is None:
+        monotonic_values = [0.0, 0.15]
+
+    return patch("src.infrastructure.screen_region.Image.open",
+                 side_effect=_open_side_effect_for_sizes(tmp_path, size_map)), \
+           patch(_GRAB_TARGET, return_value=grab_img), \
+           patch(_DIFF_TARGET, return_value=diff_result), \
+           patch(_SLEEP_TARGET), \
+           patch(_MONO_TARGET, side_effect=monotonic_values)
+
+
+def _open_side_effect_for_sizes(tmp_path, size_map):
+    def _open_side_effect(path, *args, **kwargs):
+        filename = os.path.basename(path)
+        if filename not in size_map:
+            raise FileNotFoundError(path)
+        mock = MagicMock()
+        mock.size = size_map[filename]
+        mock.convert.return_value = mock
+        return mock
+    return _open_side_effect
+
+
+# ---------------------------------------------------------------------------
 # 1. Directory / file existence checks
 # ---------------------------------------------------------------------------
 
 class TestDirectoryAndFileChecks:
     def test_returns_false_when_reference_dir_does_not_exist(self, tmp_path):
         missing = str(tmp_path / "no_such_dir")
+        from src.minecraft.wait_for import wait_for_screen_region
         assert wait_for_screen_region(missing, (0, 0, 100, 100)) is False
 
     def test_returns_false_when_directory_is_empty(self, tmp_path):
         empty_dir = tmp_path / "empty"
         empty_dir.mkdir()
         with (
-            patch("src.minecraft.wait_for.os.listdir", return_value=[]),
-            patch("src.minecraft.wait_for.Image.open"),
+            patch("src.infrastructure.screen_region.os.listdir", return_value=[]),
+            patch("src.infrastructure.screen_region.Image.open"),
         ):
+            from src.minecraft.wait_for import wait_for_screen_region
             assert wait_for_screen_region(str(empty_dir), (0, 0, 100, 100)) is False
 
     def test_returns_false_when_no_valid_extensions(self, tmp_path):
         """Files with extensions not in the valid set are ignored."""
         ref_dir = tmp_path / "refs"
         ref_dir.mkdir()
-        # Create files with invalid extensions
         (ref_dir / "file.txt").touch()
         (ref_dir / "file.pdf").touch()
 
-        with patch("src.minecraft.wait_for.os.listdir", return_value=["file.txt", "file.pdf"]):
-            assert wait_for_screen_region(str(ref_dir), (0, 0, 100, 100)) is False
+        with patch("src.infrastructure.screen_region.os.listdir",
+                   return_value=["file.txt", "file.pdf"]):
+            from src.minecraft.wait_for import wait_for_screen_region
+            assert wait_for_screen_region(str(tmp_path), (0, 0, 100, 100)) is False
 
     def test_returns_false_when_all_images_size_mismatch(self, tmp_path):
         """All images are skipped because none match region size."""
         size_map = {"ref1.png": (200, 200), "ref2.jpg": (50, 50)}
         with _patch_image_open_with_sizes(tmp_path, size_map):
+            from src.minecraft.wait_for import wait_for_screen_region
             assert wait_for_screen_region(str(tmp_path), (0, 0, 100, 100)) is False
 
 
@@ -91,11 +141,12 @@ class TestExtensionCaseSensitivity:
         ref_img = _make_mock_image((100, 100))
         with (
             _patch_image_open_with_sizes(tmp_path, size_map),
-            patch("src.minecraft.wait_for.ImageGrab.grab", return_value=ref_img),
-            patch("src.minecraft.wait_for.ImageChops.difference", return_value=MagicMock(getbbox=lambda: (0, 0, 1, 1))),
-            patch("src.minecraft.wait_for.time.sleep"),
-            patch("src.minecraft.wait_for.time.monotonic", side_effect=[0.0, 0.15]),
+            patch(_GRAB_TARGET, return_value=ref_img),
+            patch(_DIFF_TARGET, return_value=MagicMock(getbbox=lambda: (0, 0, 1, 1))),
+            patch(_SLEEP_TARGET),
+            patch(_MONO_TARGET, side_effect=[0.0, 0.15]),
         ):
+            from src.minecraft.wait_for import wait_for_screen_region
             assert wait_for_screen_region(str(tmp_path), (0, 0, 100, 100), timeout=0.1) is False
 
     def test_uppercase_jpg(self, tmp_path):
@@ -103,11 +154,12 @@ class TestExtensionCaseSensitivity:
         ref_img = _make_mock_image((100, 100))
         with (
             _patch_image_open_with_sizes(tmp_path, size_map),
-            patch("src.minecraft.wait_for.ImageGrab.grab", return_value=ref_img),
-            patch("src.minecraft.wait_for.ImageChops.difference", return_value=MagicMock(getbbox=lambda: (0, 0, 1, 1))),
-            patch("src.minecraft.wait_for.time.sleep"),
-            patch("src.minecraft.wait_for.time.monotonic", side_effect=[0.0, 0.15]),
+            patch(_GRAB_TARGET, return_value=ref_img),
+            patch(_DIFF_TARGET, return_value=MagicMock(getbbox=lambda: (0, 0, 1, 1))),
+            patch(_SLEEP_TARGET),
+            patch(_MONO_TARGET, side_effect=[0.0, 0.15]),
         ):
+            from src.minecraft.wait_for import wait_for_screen_region
             assert wait_for_screen_region(str(tmp_path), (0, 0, 100, 100), timeout=0.1) is False
 
     def test_mixed_case_jpeg(self, tmp_path):
@@ -115,11 +167,12 @@ class TestExtensionCaseSensitivity:
         ref_img = _make_mock_image((100, 100))
         with (
             _patch_image_open_with_sizes(tmp_path, size_map),
-            patch("src.minecraft.wait_for.ImageGrab.grab", return_value=ref_img),
-            patch("src.minecraft.wait_for.ImageChops.difference", return_value=MagicMock(getbbox=lambda: (0, 0, 1, 1))),
-            patch("src.minecraft.wait_for.time.sleep"),
-            patch("src.minecraft.wait_for.time.monotonic", side_effect=[0.0, 0.15]),
+            patch(_GRAB_TARGET, return_value=ref_img),
+            patch(_DIFF_TARGET, return_value=MagicMock(getbbox=lambda: (0, 0, 1, 1))),
+            patch(_SLEEP_TARGET),
+            patch(_MONO_TARGET, side_effect=[0.0, 0.15]),
         ):
+            from src.minecraft.wait_for import wait_for_screen_region
             assert wait_for_screen_region(str(tmp_path), (0, 0, 100, 100), timeout=0.1) is False
 
     def test_lowercase_extensions_still_work(self, tmp_path):
@@ -127,11 +180,12 @@ class TestExtensionCaseSensitivity:
         ref_img = _make_mock_image((100, 100))
         with (
             _patch_image_open_with_sizes(tmp_path, size_map),
-            patch("src.minecraft.wait_for.ImageGrab.grab", return_value=ref_img),
-            patch("src.minecraft.wait_for.ImageChops.difference", return_value=MagicMock(getbbox=lambda: (0, 0, 1, 1))),
-            patch("src.minecraft.wait_for.time.sleep"),
-            patch("src.minecraft.wait_for.time.monotonic", side_effect=[0.0, 0.15]),
+            patch(_GRAB_TARGET, return_value=ref_img),
+            patch(_DIFF_TARGET, return_value=MagicMock(getbbox=lambda: (0, 0, 1, 1))),
+            patch(_SLEEP_TARGET),
+            patch(_MONO_TARGET, side_effect=[0.0, 0.15]),
         ):
+            from src.minecraft.wait_for import wait_for_screen_region
             assert wait_for_screen_region(str(tmp_path), (0, 0, 100, 100), timeout=0.1) is False
 
 
@@ -143,25 +197,26 @@ class TestSizeFiltering:
     def test_skips_images_that_do_not_match_region_size(self, tmp_path):
         """Images with wrong dimensions are skipped; only matching ones are used."""
         size_map = {
-            "wrong.png": (200, 200),   # too big
-            "right.png": (100, 100),   # matches
-            "also_wrong.bmp": (50, 50),  # too small
+            "wrong.png": (200, 200),
+            "right.png": (100, 100),
+            "also_wrong.bmp": (50, 50),
         }
         ref_img = _make_mock_image((100, 100))
         with (
             _patch_image_open_with_sizes(tmp_path, size_map),
-            patch("src.minecraft.wait_for.ImageGrab.grab", return_value=ref_img),
-            patch("src.minecraft.wait_for.ImageChops.difference", return_value=MagicMock(getbbox=lambda: (0, 0, 1, 1))),
-            patch("src.minecraft.wait_for.time.sleep"),
-            patch("src.minecraft.wait_for.time.monotonic", side_effect=[0.0, 0.15]),
+            patch(_GRAB_TARGET, return_value=ref_img),
+            patch(_DIFF_TARGET, return_value=MagicMock(getbbox=lambda: (0, 0, 1, 1))),
+            patch(_SLEEP_TARGET),
+            patch(_MONO_TARGET, side_effect=[0.0, 0.15]),
         ):
+            from src.minecraft.wait_for import wait_for_screen_region
             result = wait_for_screen_region(str(tmp_path), (0, 0, 100, 100), timeout=0.1)
-            # No match because we never set up a matching screenshot
             assert result is False
 
     def test_all_wrong_size_returns_false(self, tmp_path):
         size_map = {"a.png": (200, 200), "b.jpg": (50, 50)}
         with _patch_image_open_with_sizes(tmp_path, size_map):
+            from src.minecraft.wait_for import wait_for_screen_region
             result = wait_for_screen_region(str(tmp_path), (0, 0, 100, 100), timeout=0.1)
             assert result is False
 
@@ -173,18 +228,17 @@ class TestSizeFiltering:
 class TestInvalidImageHandling:
     def test_invalid_image_file_skipped_with_warning(self, tmp_path):
         """A file with a valid extension that fails to open is skipped."""
-        # Create a real file that is not a valid image
         bad_file = tmp_path / "bad.png"
         bad_file.write_text("not an image")
 
-        # List only the bad file; Image.open raises an exception
         def _open_side_effect(path, *args, **kwargs):
             raise OSError("cannot identify image file")
 
         with (
-            patch("src.minecraft.wait_for.os.listdir", return_value=["bad.png"]),
-            patch("src.minecraft.wait_for.Image.open", side_effect=_open_side_effect),
+            patch("src.infrastructure.screen_region.os.listdir", return_value=["bad.png"]),
+            patch("src.infrastructure.screen_region.Image.open", side_effect=_open_side_effect),
         ):
+            from src.minecraft.wait_for import wait_for_screen_region
             result = wait_for_screen_region(str(tmp_path), (0, 0, 100, 100), timeout=0.1)
             assert result is False
 
@@ -209,13 +263,15 @@ class TestInvalidImageHandling:
         ref_img = _make_mock_image((100, 100))
 
         with (
-            patch("src.minecraft.wait_for.os.listdir", return_value=["good.png", "bad.png"]),
-            patch("src.minecraft.wait_for.Image.open", side_effect=_open_side_effect),
-            patch("src.minecraft.wait_for.ImageGrab.grab", return_value=ref_img),
-            patch("src.minecraft.wait_for.ImageChops.difference", return_value=MagicMock(getbbox=lambda: (0, 0, 1, 1))),
-            patch("src.minecraft.wait_for.time.sleep"),
-            patch("src.minecraft.wait_for.time.monotonic", side_effect=[0.0, 0.15]),
+            patch("src.infrastructure.screen_region.os.listdir",
+                  return_value=["good.png", "bad.png"]),
+            patch("src.infrastructure.screen_region.Image.open", side_effect=_open_side_effect),
+            patch(_GRAB_TARGET, return_value=ref_img),
+            patch(_DIFF_TARGET, return_value=MagicMock(getbbox=lambda: (0, 0, 1, 1))),
+            patch(_SLEEP_TARGET),
+            patch(_MONO_TARGET, side_effect=[0.0, 0.15]),
         ):
+            from src.minecraft.wait_for import wait_for_screen_region
             result = wait_for_screen_region(str(tmp_path), (0, 0, 100, 100), timeout=0.1)
             assert result is False
             assert "good.png" in calls
@@ -231,19 +287,17 @@ class TestSuccessfulMatch:
         """When ImageGrab.grab returns an image identical to a reference, True."""
         ref_size = (100, 100)
         ref_img = _make_mock_image(ref_size)
-
-        # The screenshot (current_image) is identical to the reference,
-        # so ImageChops.difference returns an image with no bounding box.
         diff_mock = MagicMock()
-        diff_mock.getbbox.return_value = None  # no difference
+        diff_mock.getbbox.return_value = None
 
         with (
             _patch_image_open_with_sizes(tmp_path, {"ref.png": ref_size}),
-            patch("src.minecraft.wait_for.ImageGrab.grab", return_value=ref_img),
-            patch("src.minecraft.wait_for.ImageChops.difference", return_value=diff_mock),
-            patch("src.minecraft.wait_for.time.sleep"),
-            patch("src.minecraft.wait_for.time.monotonic", side_effect=[0.0, 0.1]),
+            patch(_GRAB_TARGET, return_value=ref_img),
+            patch(_DIFF_TARGET, return_value=diff_mock),
+            patch(_SLEEP_TARGET),
+            patch(_MONO_TARGET, side_effect=[0.0, 0.1]),
         ):
+            from src.minecraft.wait_for import wait_for_screen_region
             result = wait_for_screen_region(str(tmp_path), (0, 0, 100, 100), timeout=5.0)
             assert result is True
 
@@ -252,28 +306,26 @@ class TestSuccessfulMatch:
         ref_size = (100, 100)
         ref1 = _make_mock_image(ref_size)
         ref2 = _make_mock_image(ref_size)
-
-        # First call: no match (getbbox returns something)
-        # Second call: match (getbbox returns None)
         match_call = [False]
 
         def _diff_side_effect(ref, current):
             if not match_call[0]:
                 match_call[0] = True
                 no_match = MagicMock()
-                no_match.getbbox.return_value = (0, 0, 1, 1)  # has difference
+                no_match.getbbox.return_value = (0, 0, 1, 1)
                 return no_match
             match_mock = MagicMock()
-            match_mock.getbbox.return_value = None  # perfect match
+            match_mock.getbbox.return_value = None
             return match_mock
 
         with (
             _patch_image_open_with_sizes(tmp_path, {"ref1.png": ref_size, "ref2.png": ref_size}),
-            patch("src.minecraft.wait_for.ImageGrab.grab", return_value=ref1),
-            patch("src.minecraft.wait_for.ImageChops.difference", side_effect=_diff_side_effect),
-            patch("src.minecraft.wait_for.time.sleep"),
-            patch("src.minecraft.wait_for.time.monotonic", side_effect=[0.0, 0.1]),
+            patch(_GRAB_TARGET, return_value=ref1),
+            patch(_DIFF_TARGET, side_effect=_diff_side_effect),
+            patch(_SLEEP_TARGET),
+            patch(_MONO_TARGET, side_effect=[0.0, 0.1]),
         ):
+            from src.minecraft.wait_for import wait_for_screen_region
             result = wait_for_screen_region(str(tmp_path), (0, 0, 100, 100), timeout=5.0)
             assert result is True
 
@@ -287,27 +339,24 @@ class TestTimeout:
         """When no screenshot ever matches, returns False after timeout."""
         ref_size = (100, 100)
         ref_img = _make_mock_image(ref_size)
-
-        # Always returns a non-matching difference
         no_match = MagicMock()
         no_match.getbbox.return_value = (0, 0, 1, 1)
-
-        # Simulate time progressing past the timeout
         call_count = [0]
 
         def _monotonic_side_effect():
             call_count[0] += 1
             if call_count[0] == 1:
                 return 0.0
-            return 10.1  # past 5-second timeout
+            return 10.1
 
         with (
             _patch_image_open_with_sizes(tmp_path, {"ref.png": ref_size}),
-            patch("src.minecraft.wait_for.ImageGrab.grab", return_value=ref_img),
-            patch("src.minecraft.wait_for.ImageChops.difference", return_value=no_match),
-            patch("src.minecraft.wait_for.time.sleep"),
-            patch("src.minecraft.wait_for.time.monotonic", side_effect=_monotonic_side_effect),
+            patch(_GRAB_TARGET, return_value=ref_img),
+            patch(_DIFF_TARGET, return_value=no_match),
+            patch(_SLEEP_TARGET),
+            patch(_MONO_TARGET, side_effect=_monotonic_side_effect),
         ):
+            from src.minecraft.wait_for import wait_for_screen_region
             result = wait_for_screen_region(str(tmp_path), (0, 0, 100, 100), timeout=5.0)
             assert result is False
 
@@ -317,24 +366,23 @@ class TestTimeout:
         ref_img = _make_mock_image(ref_size)
         no_match = MagicMock()
         no_match.getbbox.return_value = (0, 0, 1, 1)
-
         call_count = [0]
 
         def _monotonic_side_effect():
             call_count[0] += 1
             if call_count[0] <= 3:
                 return 0.0
-            return 6.0  # past 5-second timeout
+            return 6.0
 
         with (
             _patch_image_open_with_sizes(tmp_path, {"ref.png": ref_size}),
-            patch("src.minecraft.wait_for.ImageGrab.grab", return_value=ref_img),
-            patch("src.minecraft.wait_for.ImageChops.difference", return_value=no_match),
-            patch("src.minecraft.wait_for.time.sleep"),
-            patch("src.minecraft.wait_for.time.monotonic", side_effect=_monotonic_side_effect),
+            patch(_GRAB_TARGET, return_value=ref_img),
+            patch(_DIFF_TARGET, return_value=no_match),
+            patch(_SLEEP_TARGET),
+            patch(_MONO_TARGET, side_effect=_monotonic_side_effect),
         ):
+            from src.minecraft.wait_for import wait_for_screen_region
             wait_for_screen_region(str(tmp_path), (0, 0, 100, 100), timeout=5.0)
-            # At least 3 grabs were taken before timeout
             assert call_count[0] >= 3
 
 
@@ -349,7 +397,6 @@ class TestDebugImageOnTimeout:
         ref_img = _make_mock_image(ref_size)
         no_match = MagicMock()
         no_match.getbbox.return_value = (0, 0, 1, 1)
-
         call_count = [0]
 
         def _monotonic_side_effect():
@@ -357,32 +404,33 @@ class TestDebugImageOnTimeout:
             if call_count[0] == 1:
                 return 0.0
             if call_count[0] == 2:
-                return 1.0  # enter loop body once, grab screenshot
-            return 6.0  # exit after one iteration
+                return 1.0
+            return 6.0
 
         with (
             _patch_image_open_with_sizes(tmp_path, {"ref.png": ref_size}),
-            patch("src.minecraft.wait_for.ImageGrab.grab", return_value=ref_img),
-            patch("src.minecraft.wait_for.ImageChops.difference", return_value=no_match),
-            patch("src.minecraft.wait_for.time.sleep"),
-            patch("src.minecraft.wait_for.time.monotonic", side_effect=_monotonic_side_effect),
+            patch(_GRAB_TARGET, return_value=ref_img),
+            patch(_DIFF_TARGET, return_value=no_match),
+            patch(_SLEEP_TARGET),
+            patch(_MONO_TARGET, side_effect=_monotonic_side_effect),
         ):
+            from src.minecraft.wait_for import wait_for_screen_region
             wait_for_screen_region(str(tmp_path), (0, 0, 100, 100), timeout=5.0)
-
-        # last_capture is the image returned by ImageGrab.grab, which is ref_img
-        # The .save call happens on the image after .convert("RGB"), which returns ref_img itself
+        # ref_img is the mock returned by ImageGrab.grab; .save is called on it
         ref_img.save.assert_called_once()
 
     def test_debug_image_not_saved_when_no_grab_yet(self):
-        """When timeout fires before any grab (interval > timeout), no debug image."""
+        """When timeout fires before any grab, no debug image."""
         with (
-            patch("src.minecraft.wait_for.os.path.isdir", return_value=True),
-            patch("src.minecraft.wait_for.os.listdir", return_value=[]),
-            patch("src.minecraft.wait_for.time.monotonic", side_effect=[0.0, 6.0]),
-            patch("src.minecraft.wait_for.time.sleep"),
+            patch("src.infrastructure.screen_region.os.path.isdir", return_value=True),
+            patch("src.infrastructure.screen_region.os.listdir", return_value=[]),
+            patch(_MONO_TARGET, side_effect=[0.0, 6.0]),
+            patch(_SLEEP_TARGET),
         ):
+            from src.minecraft.wait_for import wait_for_screen_region
             result = wait_for_screen_region("/fake/dir", (0, 0, 100, 100), timeout=5.0)
             assert result is False
+        # No save call because no grab was performed (early return)
 
 
 # ---------------------------------------------------------------------------
@@ -396,7 +444,6 @@ class TestDifferenceErrorHandling:
         ref_img = _make_mock_image(ref_size)
         diff_match = MagicMock()
         diff_match.getbbox.return_value = None
-
         call_count = [0]
 
         def _diff_side_effect(ref, current):
@@ -410,16 +457,17 @@ class TestDifferenceErrorHandling:
             if call_count[0] == 1:
                 return 0.0
             if call_count[0] == 2:
-                return 0.1  # enter loop, diff raises ValueError
-            return 0.2  # enter loop again, diff matches
+                return 0.1
+            return 0.2
 
         with (
             _patch_image_open_with_sizes(tmp_path, {"ref.png": ref_size}),
-            patch("src.minecraft.wait_for.ImageGrab.grab", return_value=ref_img),
-            patch("src.minecraft.wait_for.ImageChops.difference", side_effect=_diff_side_effect),
-            patch("src.minecraft.wait_for.time.sleep"),
-            patch("src.minecraft.wait_for.time.monotonic", side_effect=_monotonic_side_effect),
+            patch(_GRAB_TARGET, return_value=ref_img),
+            patch(_DIFF_TARGET, side_effect=_diff_side_effect),
+            patch(_SLEEP_TARGET),
+            patch(_MONO_TARGET, side_effect=_monotonic_side_effect),
         ):
+            from src.minecraft.wait_for import wait_for_screen_region
             result = wait_for_screen_region(str(tmp_path), (0, 0, 100, 100), timeout=5.0)
             assert result is True
 
@@ -436,11 +484,12 @@ class TestValidExtensions:
         ref_img = _make_mock_image((100, 100))
         with (
             _patch_image_open_with_sizes(tmp_path, size_map),
-            patch("src.minecraft.wait_for.ImageGrab.grab", return_value=ref_img),
-            patch("src.minecraft.wait_for.ImageChops.difference", return_value=MagicMock(getbbox=lambda: (0, 0, 1, 1))),
-            patch("src.minecraft.wait_for.time.sleep"),
-            patch("src.minecraft.wait_for.time.monotonic", side_effect=[0.0, 0.15]),
+            patch(_GRAB_TARGET, return_value=ref_img),
+            patch(_DIFF_TARGET, return_value=MagicMock(getbbox=lambda: (0, 0, 1, 1))),
+            patch(_SLEEP_TARGET),
+            patch(_MONO_TARGET, side_effect=[0.0, 0.15]),
         ):
+            from src.minecraft.wait_for import wait_for_screen_region
             result = wait_for_screen_region(str(tmp_path), (0, 0, 100, 100), timeout=0.1)
             assert result is False
 
@@ -450,7 +499,9 @@ class TestValidExtensions:
         for ext in unsupported:
             (tmp_path / f"ref{ext}").touch()
 
-        with patch("src.minecraft.wait_for.os.listdir", return_value=[f"ref{ext}" for ext in unsupported]):
+        with patch("src.infrastructure.screen_region.os.listdir",
+                   return_value=[f"ref{ext}" for ext in unsupported]):
+            from src.minecraft.wait_for import wait_for_screen_region
             result = wait_for_screen_region(str(tmp_path), (0, 0, 100, 100), timeout=0.1)
             assert result is False
 
@@ -465,10 +516,8 @@ class TestRegionExtraction:
         ref_img = _make_mock_image(ref_size)
         no_match = MagicMock()
         no_match.getbbox.return_value = (0, 0, 1, 1)
-
         region = (50, 60, 200, 150)
         expected_bbox = (50, 60, 250, 210)
-
         call_count = [0]
 
         def _monotonic_side_effect():
@@ -476,16 +525,16 @@ class TestRegionExtraction:
             if call_count[0] == 1:
                 return 0.0
             if call_count[0] == 2:
-                return 1.0  # enter loop once
-            return 6.0  # exit after one iteration
+                return 1.0
+            return 6.0
 
         with (
             _patch_image_open_with_sizes(tmp_path, {"ref.png": ref_size}),
-            patch("src.minecraft.wait_for.ImageGrab.grab", return_value=ref_img) as grab_mock,
-            patch("src.minecraft.wait_for.ImageChops.difference", return_value=no_match),
-            patch("src.minecraft.wait_for.time.sleep"),
-            patch("src.minecraft.wait_for.time.monotonic", side_effect=_monotonic_side_effect),
+            patch(_GRAB_TARGET, return_value=ref_img) as grab_mock,
+            patch(_DIFF_TARGET, return_value=no_match),
+            patch(_SLEEP_TARGET),
+            patch(_MONO_TARGET, side_effect=_monotonic_side_effect),
         ):
+            from src.minecraft.wait_for import wait_for_screen_region
             wait_for_screen_region(str(tmp_path), region, timeout=5.0)
-
         grab_mock.assert_called_once_with(bbox=expected_bbox)
