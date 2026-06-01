@@ -9,7 +9,9 @@ import time
 
 from .. import config
 from ..infrastructure.minecraft_launcher import MinecraftLauncher
+from ..infrastructure.screen_region import ScreenRegionMatcher
 from ..infrastructure.window_manager import WindowManager
+from ..application.test_service import TestService
 from .env import create_servers_dat, create_options_txt
 from .input import VirtualInputController
 from .wait_for import wait_for_screen_region
@@ -26,6 +28,15 @@ _launcher = MinecraftLauncher(
     resolution=config.RESOLUTION,
 )
 _wm = WindowManager()
+
+# Module-level TestService instance for backward-compatible delegation.
+_test_service = TestService(
+    minecraft=_launcher,
+    window_manager=_wm,
+    screen_matcher=ScreenRegionMatcher(),
+    input_controller=VirtualInputController(),
+    screenshots_dir=config.SCREENSHOTS_DIR,
+)
 
 # Absolute position of the "Quit Game" button within the 1024x768 game window.
 # Computed for the new standard resolution.
@@ -187,45 +198,31 @@ def test_single_version(
     screenshots_dir: str,
     login_wait_timeout: int = 30,
 ) -> dict:
-    """Test a single Minecraft version. Returns a test result dict."""
+    """Test a single Minecraft version. Returns a test result dict.
+
+    Thin wrapper for backward compatibility — delegates to :class:`TestService`.
+    The ``virtual_device`` and ``screenshots_dir`` parameters are accepted
+    for API compatibility but the service manages its own resources.
+    """
     logger.info("--- Starting test for version: %s ---", version)
-    process = None
-    start_time = time.time()
+    test_result = _test_service.test_version(
+        version_str=version,
+        commit_hash=commit_hash,
+        login_wait_timeout=login_wait_timeout,
+    )
+
     result = {
         "version": version,
-        "passed": False,
-        "screenshot_path": None,
-        "duration_seconds": None,
-        "error": None,
+        "passed": test_result.passed,
+        "screenshot_path": str(test_result.screenshot_path) if test_result.screenshot_path else None,
+        "duration_seconds": test_result.duration_seconds,
+        "error": test_result.error,
     }
 
-    try:
-        process = start_minecraft(version)
-        window_id = wait_for_game(version)
-        virtual_device.set_window(window_id)
-        log_to_multiplayer(version, virtual_device, window_id)
-        time.sleep(login_wait_timeout)  # wait for the player to be logged in
-        screenshot_path = capture_screenshot(
-            version, commit_hash, window_id, screenshots_dir
-        )
-        result["passed"] = True
-        result["screenshot_path"] = screenshot_path
+    if test_result.passed:
         logger.info("✅ Test PASSED for version: %s", version)
-        return result
-    except Exception as e:
-        result["error"] = str(e)
+    else:
         logger.error("❌ Test FAILED for version: %s", version)
-        logger.error("   Reason: %s", e)
-        return result
-    finally:
-        if process:
-            logger.info("--- Cleaning up for version: %s ---", version)
-            process.terminate()
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                logger.warning(
-                    "   Process for %s did not terminate gracefully, killing.", version
-                )
-                process.kill()
-        result["duration_seconds"] = round(time.time() - start_time, 1)
+        logger.error("   Reason: %s", test_result.error)
+
+    return result
