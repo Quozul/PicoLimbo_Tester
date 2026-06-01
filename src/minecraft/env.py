@@ -1,4 +1,8 @@
-"""Minecraft environment setup: servers.dat and options.txt generation."""
+"""Minecraft environment setup: servers.dat and options.txt generation.
+
+Provides both the legacy module-level functions (for backward compatibility)
+and a ``ConfigWriter`` instance for injection-based usage.
+"""
 
 import logging
 import os
@@ -83,3 +87,38 @@ def create_servers_dat(
     nbt_file.save(output_file_path)
 
     logger.debug("Wrote servers.dat to %s", output_file_path)
+
+
+# -- Public API for injection-based usage -----------------------------------
+
+from ..infrastructure.config_writer import ConfigWriter, ServerEntry
+
+# Shared instance for direct use
+config_writer = ConfigWriter()
+
+
+def write_servers_dat(
+    output_path,
+    servers,
+):
+    """Write servers.dat using the shared ConfigWriter instance.
+
+    Convenience wrapper for injection-based usage.
+    """
+    config_writer.write_servers_dat(output_path, servers)
+
+
+def write_options_txt(output_path, version: Version):
+    """Write options.txt using the shared ConfigWriter instance.
+
+    Convenience wrapper for injection-based usage.
+    """
+    config_writer.write_options_txt(output_path, version)
+
+
+def write_velocity_toml(output_path, config_dict):
+    """Write velocity.toml using the shared ConfigWriter instance.
+
+    Convenience wrapper for injection-based usage.
+    """
+    config_writer.write_velocity_toml(output_path, config_dict)

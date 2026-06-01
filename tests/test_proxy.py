@@ -210,10 +210,12 @@ class TestVelocityProxyManagerConfig:
         config = manager.config_template(pico_port)
 
         assert config["bind"] == "0.0.0.0:25565"
-        assert config["online_mode"] is False
-        assert config["player_info_forwarding_mode"] == "MODERN"
+        assert config["online-mode"] is False
+        assert config["player-info-forwarding-mode"] == "MODERN"
+        assert config["forwarding-secret-file"] == "forwarding.secret"
         assert config["servers"]["limbo"] == f"127.0.0.1:{pico_port}"
         assert config["servers"]["try"] == ["limbo"]
+        assert config["forced-hosts"] == {}
 
     def test_config_template_uses_different_port(self, manager):
         pico_port = 9999
@@ -223,29 +225,29 @@ class TestVelocityProxyManagerConfig:
     # --- test_write_config_generates_valid_toml ---
 
     def test_write_config_generates_valid_toml(self, manager):
-        """Generated config file contains all required TOML keys and values."""
+        """Config dict passed to ConfigWriter contains all required keys."""
         pico_port = 30066
-        content = manager._generate_config(pico_port)
+        config_dict = manager.config_template(pico_port)
 
-        # Verify key TOML entries
-        assert f'bind = "0.0.0.0:25565"' in content
-        assert "online-mode = false" in content
-        assert 'player-info-forwarding-mode = "MODERN"' in content
-        assert f"limbo = \"127.0.0.1:{pico_port}\"" in content
-        assert 'try = ["limbo"]' in content
+        # Verify key TOML entries (keys use hyphens for TOML compatibility)
+        assert config_dict["bind"] == "0.0.0.0:25565"
+        assert config_dict["online-mode"] is False
+        assert config_dict["player-info-forwarding-mode"] == "MODERN"
+        assert config_dict["servers"]["limbo"] == f"127.0.0.1:{pico_port}"
+        assert config_dict["servers"]["try"] == ["limbo"]
 
     def test_write_config_to_file(self, manager, tmp_path):
         """Config written to disk is valid and parseable."""
+        from pathlib import Path
         config_dir = tmp_path / "config"
         config_dir.mkdir()
         pico_port = 30066
 
-        content = manager._generate_config(pico_port)
+        config_dict = manager.config_template(pico_port)
         config_path = config_dir / "velocity.toml"
-        config_path.write_text(content)
+        manager._config_writer.write_velocity_toml(config_path, config_dict)
 
         written = config_path.read_text()
-        assert written == content
         assert f"127.0.0.1:{pico_port}" in written
 
 

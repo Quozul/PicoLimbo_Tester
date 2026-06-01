@@ -11,6 +11,7 @@ from subprocess import Popen
 
 from .. import config
 from ..infrastructure.artifact_repository import ArtifactRepository
+from ..infrastructure.config_writer import ConfigWriter
 from .base import ProxyManager
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ class VelocityProxyManager(ProxyManager):
         self,
         cache_dir: Path | None = None,
         artifact_repo: ArtifactRepository | None = None,
+        config_writer: ConfigWriter | None = None,
     ) -> None:
         """Initialize the Velocity proxy manager.
 
@@ -41,6 +43,8 @@ class VelocityProxyManager(ProxyManager):
             artifact_repo: Pre-configured ``ArtifactRepository``.
                 If ``None``, one is created from *cache_dir* and
                 ``config.VELOCITY_API_BASE``.
+            config_writer: Pre-configured ``ConfigWriter`` for TOML output.
+                If ``None``, a fresh instance is created.
         """
         self._cache_dir = cache_dir or config.PROXY_CACHE_DIR / "velocity"
         self._cache_dir.mkdir(parents=True, exist_ok=True)
@@ -49,6 +53,7 @@ class VelocityProxyManager(ProxyManager):
             api_base=config.VELOCITY_API_BASE,
             cache_dir=self._cache_dir,
         )
+        self._config_writer = config_writer or ConfigWriter()
 
     def download_if_needed(self) -> Path:
         """Download Velocity jar if not already cached.
@@ -122,8 +127,8 @@ class VelocityProxyManager(ProxyManager):
         """
         # Generate and write config
         config_path = config_dir / VELOCITY_CONFIG_FILENAME
-        config_content = self._generate_config(pico_limbo_port, forwarding_method)
-        config_path.write_text(config_content)
+        config_dict = self.config_template(pico_limbo_port, forwarding_method)
+        self._config_writer.write_velocity_toml(config_path, config_dict)
         logger.info("Wrote Velocity config to %s", config_path)
 
         # Write forwarding secret file
@@ -253,57 +258,15 @@ class VelocityProxyManager(ProxyManager):
         """
         return {
             "bind": "0.0.0.0:25565",
-            "online_mode": False,
-            "player_info_forwarding_mode": forwarding_method.upper(),
+            "online-mode": False,
+            "player-info-forwarding-mode": forwarding_method.upper(),
+            "forwarding-secret-file": "forwarding.secret",
             "servers": {
                 "limbo": f"127.0.0.1:{pico_limbo_port}",
                 "try": ["limbo"],
             },
+            "forced-hosts": {},
         }
-
-    @staticmethod
-    def _toml_value(value: object) -> str:
-        """Convert a Python value to a TOML-literal string.
-
-        TOML booleans are lowercase (true/false), and lists use
-        bracket notation.
-        """
-        if isinstance(value, bool):
-            return "true" if value else "false"
-        if isinstance(value, list):
-            items = ", ".join(
-                VelocityProxyManager._toml_value(v) for v in value
-            )
-            return f"[{items}]"
-        if isinstance(value, str):
-            # Use TOML basic string (double-quoted)
-            escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-            return f'"{escaped}"'
-        return str(value)
-
-    def _generate_config(self, pico_limbo_port: int, forwarding_method: str = "modern") -> str:
-        """Generate a TOML config for Velocity.
-
-        Args:
-            pico_limbo_port: Port that PicoLimbo is running on.
-            forwarding_method: Player info forwarding mode.
-
-        Returns:
-            TOML configuration string.
-        """
-        config = self.config_template(pico_limbo_port, forwarding_method)
-        return (
-            f'bind = {self._toml_value(config["bind"])}\n'
-            f'online-mode = {self._toml_value(config["online_mode"])}\n'
-            f'player-info-forwarding-mode = {self._toml_value(config["player_info_forwarding_mode"])}\n'
-            f'forwarding-secret-file = "forwarding.secret"\n'
-            f'\n'
-            f'[servers]\n'
-            f'limbo = {self._toml_value(config["servers"]["limbo"])}\n'
-            f'try = {self._toml_value(config["servers"]["try"])}\n'
-            f'\n'
-            f'[forced-hosts]\n'
-        )
 
     def _load_cached_version(self) -> tuple[Path | None, str | None]:
         """Load the cached version info from metadata.
