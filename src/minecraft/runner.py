@@ -8,9 +8,8 @@ import shutil
 import subprocess
 import time
 
-import minecraft_launcher_lib
-
 from .. import config
+from ..infrastructure.minecraft_launcher import MinecraftLauncher
 from .env import create_servers_dat, create_options_txt
 from .input import VirtualInputController
 from .wait_for import wait_for_screen_region
@@ -18,8 +17,14 @@ from PIL import ImageGrab
 
 logger = logging.getLogger(__name__)
 
-GAME_DIRECTORY = str(config.GAME_DIRECTORY)
 REPORTS_DIRECTORY = "integration_tests_reports"
+
+# Shared launcher instance configured from the module-level config.
+_launcher = MinecraftLauncher(
+    game_directory=config.GAME_DIRECTORY,
+    jvm_args=config.JVM_ARGS,
+    resolution=config.RESOLUTION,
+)
 
 # Absolute position of the "Quit Game" button within the 1024x768 game window.
 # Computed for the new standard resolution.
@@ -158,30 +163,19 @@ def log_to_multiplayer(
 
 
 def start_minecraft(version: str) -> subprocess.Popen:
-    minecraft_directory = minecraft_launcher_lib.utils.get_minecraft_directory()
-    minecraft_launcher_lib.install.install_minecraft_version(
-        version, minecraft_directory
-    )
+    """Start Minecraft and return the subprocess.Popen handle.
 
-    options = minecraft_launcher_lib.utils.generate_test_options()
-    options["jvmArguments"] = config.JVM_ARGS
-    options["customResolution"] = True
-    options["resolutionWidth"] = str(config.RESOLUTION[0])
-    options["resolutionHeight"] = str(config.RESOLUTION[1])
-    options["gameDirectory"] = GAME_DIRECTORY
-    minecraft_command = minecraft_launcher_lib.command.get_minecraft_command(
-        version, minecraft_directory, options
-    )
+    Parameters
+    ----------
+    version : str
+        Minecraft version string, e.g. ``"1.20.1"``.
 
-    return subprocess.Popen(
-        minecraft_command,
-        cwd=minecraft_directory,
-        stdout=None,
-        stderr=None,
-        text=True,
-        encoding="utf-8",
-        errors="ignore",
-    )
+    Returns
+    -------
+    subprocess.Popen
+        Running process handle.
+    """
+    return _launcher.start(version)
 
 
 def empty_directory(directory: str) -> None:
