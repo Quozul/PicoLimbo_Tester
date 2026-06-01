@@ -13,6 +13,7 @@ from typing import Any, Optional
 from .. import database
 from .. import config
 from ..builder import engine
+from ..infrastructure.artifact_storage import ArtifactStorage
 from ..minecraft.env import create_servers_dat
 from ..minecraft.input import VirtualInputController
 from ..minecraft.runner import test_single_version, empty_directory
@@ -100,20 +101,21 @@ def _build_step(job: dict) -> tuple[bool, str]:
     ref = job["ref"]
     commit_hash = job["commit_hash"]
 
-    repo_path = engine._get_git_repo().clone(owner, repo_name)
+    # Check if artifact already exists for this commit hash
+    storage = ArtifactStorage(engine.BUILDS_DIR)
+    existing = storage.get(commit_hash)
+    if existing:
+        logger.info("Job %s: artifact already exists, skipping build", job_id)
+        return True, str(existing)
+
     # Re-resolve commit in case it changed (branch moved)
+    repo_path = engine._get_git_repo().clone(owner, repo_name)
     commit_hash = engine._get_git_repo().resolve(repo_path, ref)
     database.update_job(job_id, commit_hash=commit_hash)
 
-    # Check if artifact already exists for this commit hash
-    artifact_dir = engine.BUILDS_DIR / owner / ref / commit_hash
-    artifact_path = artifact_dir / "pico_limbo"
-    if artifact_path.exists():
-        logger.info("Job %s: artifact already exists, skipping build", job_id)
-        return True, str(artifact_path)
-
-    artifact_path_str = engine.build_project(repo_path, commit_hash, owner, ref)
-    return False, artifact_path_str
+    # Build using BuildService (clone, resolve, build, store)
+    result = engine.build_project(job["repo_url"], ref, owner, repo_name)
+    return False, str(result.artifact_path.value)
 
 
 # Map Velocity forwarding methods to PicoLimbo forwarding methods

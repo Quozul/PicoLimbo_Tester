@@ -1,15 +1,19 @@
 """PicoLimbo build engine with idempotent caching."""
 
+from __future__ import annotations
+
 import logging
 import re
-import shutil
 from pathlib import Path
 from typing import Optional
 
+
 from .. import config
 from .. import database
+from ..application.build_service import BuildResult
 from ..infrastructure import cargo_build as cargo_build_module
 from ..infrastructure import git_repository as git_repo_module
+from ..infrastructure.artifact_storage import ArtifactStorage
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +30,7 @@ COMMIT_HASH_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 # Module-level adapters (lazy-initialised on first use)
 _git_repo: git_repo_module.GitRepository | None = None
 _cargo: cargo_build_module.CargoBuildAdapter | None = None
+_build_service: BuildService | None = None
 
 
 def _get_git_repo() -> git_repo_module.GitRepository:
@@ -70,27 +75,22 @@ def is_commit_hash(ref: str) -> bool:
     return bool(COMMIT_HASH_RE.match(ref))
 
 
-def build_project(repo_path: Path, commit_hash: str, owner: str, ref: str) -> str:
-    """Build PicoLimbo with cargo. Returns the artifact path."""
-    artifact_dir = BUILDS_DIR / owner / ref / commit_hash
-    artifact_dir.mkdir(parents=True, exist_ok=True)
-    artifact_path = artifact_dir / "pico_limbo"
-
-    if artifact_path.exists():
-        logger.info("Artifact already exists at %s", artifact_path)
-        return str(artifact_path)
-
-    source = _get_cargo().build(repo_path)
-
-    # Copy artifact to our builds directory for persistence
-    if not source.exists():
-        raise FileNotFoundError(
-            f"Build artifact not found at {source}. "
-            f"Cargo build may have failed silently."
+def _get_build_service() -> BuildService:
+    """Return the module-level BuildService, creating it lazily."""
+    global _build_service
+    if _build_service is None:
+        _build_service = BuildService(
+            git_repo=_get_git_repo(),
+            cargo=_get_cargo(),
+            artifact_storage=ArtifactStorage(config.BUILDS_DIR),
+            builds_dir=config.BUILDS_DIR,
         )
-    shutil.copy2(str(source), str(artifact_path))
-    logger.info("Artifact built and copied to %s", artifact_path)
-    return str(artifact_path)
+    return _build_service
+
+
+def build_project(repo_url: str, ref: str, owner: str, repo_name: str) -> BuildResult:
+    """Build a project. Returns BuildResult with commit_hash and artifact_path."""
+    return _get_build_service().build(repo_url, ref, owner, repo_name)
 
 
 def create_job(
@@ -130,7 +130,7 @@ def create_job(
     return job
 
 
-def get_artifact_file(job_id: str) -> Optional[Path]:
+def get_artifact_file(job_id: str) -> Path | None:
     """Get the artifact file path for a job. Returns None if not built."""
     job = database.get_job_by_id(job_id)
     if not job or not job.get("artifact_path"):

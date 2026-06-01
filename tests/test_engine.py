@@ -173,138 +173,75 @@ class TestGetCargo:
 
 
 # ---------------------------------------------------------------------------
-# 4. build_project
+# 4. build_project (now delegates to BuildService)
 # ---------------------------------------------------------------------------
 
 class TestBuildProject:
-    def test_returns_existing_artifact_path(self):
-        artifact_path = _make_path_mock()
-        artifact_path.exists.return_value = True
-        artifact_path.__str__ = lambda self: "/app/builds/owner/main/abc123/pico_limbo"
+    def test_delegates_to_build_service(self):
+        """build_project should delegate to BuildService.build()."""
+        from src.application.build_service import BuildResult
+        from src.domain.value_objects import ArtifactPath, CommitHash
 
-        artifact_dir = _make_path_mock()
-        artifact_dir.__truediv__ = MagicMock(
-            side_effect=lambda other: artifact_path if other == "pico_limbo" else artifact_dir
+        # Reset module-level service so we get a fresh one
+        engine._build_service = None
+
+        mock_service = MagicMock()
+        mock_result = BuildResult(
+            commit_hash=CommitHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            artifact_path=ArtifactPath(Path("/app/builds/aaaaaaa1/latest/pico_limbo")),
         )
-        artifact_dir.__str__ = lambda self: "/app/builds/owner/main/abc123"
+        mock_service.build.return_value = mock_result
 
-        # Reset module-level adapters so we get fresh instances
-        engine._cargo = None
-        engine._git_repo = None
+        with patch.object(engine, "_get_build_service", return_value=mock_service):
+            result = engine.build_project(
+                "https://github.com/Quozul/PicoLimbo.git",
+                "main",
+                "Quozul",
+                "PicoLimbo",
+            )
 
-        with patch.object(engine, "BUILDS_DIR", artifact_dir):
-            with patch.object(engine, "_get_cargo") as mock_get_cargo:
-                mock_cargo = MagicMock()
-                mock_get_cargo.return_value = mock_cargo
-                with patch("src.builder.engine.shutil.copy2") as mock_copy:
-                    result = engine.build_project(
-                        Path("/repos/owner/repo"),
-                        "abc123",
-                        "owner",
-                        "main",
-                    )
-
-        assert result == "/app/builds/owner/main/abc123/pico_limbo"
-        mock_cargo.build.assert_not_called()
-        mock_copy.assert_not_called()
-
-    def test_builds_and_copies_when_artifact_missing(self):
-        artifact_path = _make_path_mock()
-        artifact_path.exists.return_value = False
-        artifact_path.__str__ = lambda self: "/app/builds/owner/main/abc123/pico_limbo"
-
-        source_path = _make_path_mock()
-        source_path.exists.return_value = True
-        source_path.__str__ = lambda self: "/repos/owner/repo/target/release/pico_limbo"
-
-        artifact_dir = _make_path_mock()
-        artifact_dir.__truediv__ = MagicMock(
-            side_effect=lambda other: artifact_path if other == "pico_limbo" else artifact_dir
+        mock_service.build.assert_called_once_with(
+            "https://github.com/Quozul/PicoLimbo.git", "main", "Quozul", "PicoLimbo"
         )
+        assert isinstance(result, BuildResult)
+        assert result.artifact_path.value == Path("/app/builds/aaaaaaa1/latest/pico_limbo")
 
-        repo_mock = _make_path_mock()
-        repo_mock.__truediv__ = MagicMock(
-            side_effect=lambda other: source_path if other == "target" else repo_mock
+    def test_returns_build_result_with_commit_hash_and_artifact_path(self):
+        """build_project should return a BuildResult with correct values."""
+        from src.application.build_service import BuildResult
+        from src.domain.value_objects import ArtifactPath, CommitHash
+
+        engine._build_service = None
+
+        mock_service = MagicMock()
+        mock_result = BuildResult(
+            commit_hash=CommitHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+            artifact_path=ArtifactPath(Path("/app/builds/bbbbbbbb/latest/pico_limbo")),
         )
-        source_path.__truediv__ = MagicMock(
-            side_effect=lambda other: source_path if other == "release" else source_path
-        )
+        mock_service.build.return_value = mock_result
 
-        repo_path = Path("/repos/owner/repo")
+        with patch.object(engine, "_get_build_service", return_value=mock_service):
+            result = engine.build_project(
+                "https://github.com/Quozul/PicoLimbo.git", "main", "Quozul", "PicoLimbo",
+            )
 
-        # Reset module-level adapters so we get fresh instances
-        engine._cargo = None
-        engine._git_repo = None
+        assert result.commit_hash.value == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        assert result.artifact_path.value.exists() is False  # mock path
 
-        with patch.object(Path, "exists") as mock_path_exists:
-            mock_path_exists.return_value = True
+    def test_raises_when_build_service_raises(self):
+        """build_project should propagate exceptions from BuildService."""
+        engine._build_service = None
 
-            with patch.object(engine, "BUILDS_DIR", artifact_dir):
-                with patch.object(engine, "_get_cargo") as mock_get_cargo:
-                    mock_cargo = MagicMock()
-                    mock_cargo.build.return_value = source_path
-                    mock_get_cargo.return_value = mock_cargo
-                    with patch("src.builder.engine.shutil.copy2") as mock_copy:
-                        result = engine.build_project(
-                            repo_path,
-                            "abc123",
-                            "owner",
-                            "main",
-                        )
+        mock_service = MagicMock()
+        mock_service.build.side_effect = RuntimeError("Build failed")
 
-        assert result == "/app/builds/owner/main/abc123/pico_limbo"
-        mock_cargo.build.assert_called_once_with(repo_path)
-        mock_copy.assert_called_once_with(
-            "/repos/owner/repo/target/release/pico_limbo",
-            "/app/builds/owner/main/abc123/pico_limbo",
-        )
-
-    def test_raises_file_not_found_when_cargo_does_not_produce_artifact(self):
-        artifact_path = _make_path_mock()
-        artifact_path.exists.return_value = False
-        artifact_path.__str__ = lambda self: "/app/builds/owner/main/abc123/pico_limbo"
-
-        artifact_dir = _make_path_mock()
-        artifact_dir.__truediv__ = MagicMock(
-            side_effect=lambda other: artifact_path if other == "pico_limbo" else artifact_dir
-        )
-
-        source_path = _make_path_mock()
-        source_path.exists.return_value = False
-        source_path.__str__ = lambda self: "/repos/owner/repo/target/release/pico_limbo"
-
-        repo_mock = _make_path_mock()
-        repo_mock.__truediv__ = MagicMock(
-            side_effect=lambda other: source_path if other == "target" else repo_mock
-        )
-        source_path.__truediv__ = MagicMock(
-            side_effect=lambda other: source_path if other == "release" else source_path
-        )
-
-        repo_path = Path("/repos/owner/repo")
-
-        # Reset module-level adapters so we get fresh instances
-        engine._cargo = None
-        engine._git_repo = None
-
-        with patch.object(engine, "BUILDS_DIR", artifact_dir):
-            with patch.object(engine, "_get_cargo") as mock_get_cargo:
-                mock_cargo = MagicMock()
-                mock_cargo.build.side_effect = FileNotFoundError(
-                    "Build artifact not found at /repos/owner/repo/target/release/pico_limbo"
+        with patch.object(engine, "_get_build_service", return_value=mock_service):
+            with pytest.raises(RuntimeError, match="Build failed"):
+                engine.build_project(
+                    "https://github.com/Quozul/PicoLimbo.git", "main", "Quozul", "PicoLimbo",
                 )
-                mock_get_cargo.return_value = mock_cargo
-                with patch("src.builder.engine.shutil.copy2") as mock_copy:
-                    with pytest.raises(FileNotFoundError) as exc_info:
-                        engine.build_project(
-                            repo_path,
-                            "abc123",
-                            "owner",
-                            "main",
-                        )
 
-                    assert "Build artifact not found" in str(exc_info.value)
-                    mock_copy.assert_not_called()
+        mock_service.build.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
