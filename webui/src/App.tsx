@@ -45,12 +45,12 @@ export function App() {
         </div>
 
         {/* Middle column — VNC Viewer */}
-        <div className="hidden lg:flex-1 overflow-hidden">
+        <div className="hidden xl:block xl:flex-1 overflow-hidden">
           <VncPanel />
         </div>
 
         {/* Right column — Job History + Job Progress */}
-        <div className="flex w-[420px] max-w-[500px] min-w-[340px] flex-col overflow-hidden border-l border-border">
+        <div className="flex flex-1 flex-col overflow-hidden border-l border-border xl:w-[420px] xl:max-w-[500px] xl:min-w-[340px]">
           <JobInfoPanel activeJob={latestJob} onSelectJob={handleSelectJob} />
         </div>
       </div>
