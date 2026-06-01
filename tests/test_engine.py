@@ -149,6 +149,29 @@ class TestGetGitRepo:
         assert result is mock_instance
 
 
+class TestGetCargo:
+    def test_creates_cargo_adapter_on_first_call(self):
+        # Reset the module-level instance so we can test fresh creation
+        engine._cargo = None
+
+        with patch(
+            "src.builder.engine.cargo_build_module.CargoBuildAdapter"
+        ) as mock_cls:
+            instance = MagicMock()
+            mock_cls.return_value = instance
+            result = engine._get_cargo()
+
+        assert result is instance
+        mock_cls.assert_called_once()
+        assert mock_cls.call_args.kwargs["timeout"] is not None
+
+    def test_returns_same_instance_on_subsequent_calls(self):
+        mock_instance = MagicMock()
+        engine._cargo = mock_instance
+        result = engine._get_cargo()
+        assert result is mock_instance
+
+
 # ---------------------------------------------------------------------------
 # 4. build_project
 # ---------------------------------------------------------------------------
@@ -165,10 +188,14 @@ class TestBuildProject:
         )
         artifact_dir.__str__ = lambda self: "/app/builds/owner/main/abc123"
 
+        # Reset module-level adapters so we get fresh instances
+        engine._cargo = None
+        engine._git_repo = None
+
         with patch.object(engine, "BUILDS_DIR", artifact_dir):
-            with patch.object(engine, "_get_git_repo") as mock_get_git:
-                mock_git_repo = MagicMock()
-                mock_get_git.return_value = mock_git_repo
+            with patch.object(engine, "_get_cargo") as mock_get_cargo:
+                mock_cargo = MagicMock()
+                mock_get_cargo.return_value = mock_cargo
                 with patch("src.builder.engine.shutil.copy2") as mock_copy:
                     result = engine.build_project(
                         Path("/repos/owner/repo"),
@@ -178,7 +205,7 @@ class TestBuildProject:
                     )
 
         assert result == "/app/builds/owner/main/abc123/pico_limbo"
-        mock_git_repo._run_git.assert_not_called()
+        mock_cargo.build.assert_not_called()
         mock_copy.assert_not_called()
 
     def test_builds_and_copies_when_artifact_missing(self):
@@ -205,13 +232,18 @@ class TestBuildProject:
 
         repo_path = Path("/repos/owner/repo")
 
+        # Reset module-level adapters so we get fresh instances
+        engine._cargo = None
+        engine._git_repo = None
+
         with patch.object(Path, "exists") as mock_path_exists:
             mock_path_exists.return_value = True
 
             with patch.object(engine, "BUILDS_DIR", artifact_dir):
-                with patch.object(engine, "_get_git_repo") as mock_get_git:
-                    mock_git_repo = MagicMock()
-                    mock_get_git.return_value = mock_git_repo
+                with patch.object(engine, "_get_cargo") as mock_get_cargo:
+                    mock_cargo = MagicMock()
+                    mock_cargo.build.return_value = source_path
+                    mock_get_cargo.return_value = mock_cargo
                     with patch("src.builder.engine.shutil.copy2") as mock_copy:
                         result = engine.build_project(
                             repo_path,
@@ -221,10 +253,7 @@ class TestBuildProject:
                         )
 
         assert result == "/app/builds/owner/main/abc123/pico_limbo"
-        mock_git_repo._run_git.assert_called_once_with(
-            ["cargo", "build", "--release"],
-            cwd=repo_path,
-        )
+        mock_cargo.build.assert_called_once_with(repo_path)
         mock_copy.assert_called_once_with(
             "/repos/owner/repo/target/release/pico_limbo",
             "/app/builds/owner/main/abc123/pico_limbo",
@@ -254,10 +283,17 @@ class TestBuildProject:
 
         repo_path = Path("/repos/owner/repo")
 
+        # Reset module-level adapters so we get fresh instances
+        engine._cargo = None
+        engine._git_repo = None
+
         with patch.object(engine, "BUILDS_DIR", artifact_dir):
-            with patch.object(engine, "_get_git_repo") as mock_get_git:
-                mock_git_repo = MagicMock()
-                mock_get_git.return_value = mock_git_repo
+            with patch.object(engine, "_get_cargo") as mock_get_cargo:
+                mock_cargo = MagicMock()
+                mock_cargo.build.side_effect = FileNotFoundError(
+                    "Build artifact not found at /repos/owner/repo/target/release/pico_limbo"
+                )
+                mock_get_cargo.return_value = mock_cargo
                 with patch("src.builder.engine.shutil.copy2") as mock_copy:
                     with pytest.raises(FileNotFoundError) as exc_info:
                         engine.build_project(

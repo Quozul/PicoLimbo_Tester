@@ -8,6 +8,7 @@ from typing import Optional
 
 from .. import config
 from .. import database
+from ..infrastructure import cargo_build as cargo_build_module
 from ..infrastructure import git_repository as git_repo_module
 
 logger = logging.getLogger(__name__)
@@ -22,8 +23,9 @@ GITHUB_URL_RE = re.compile(
 # Git commit hash: 40-character hex string
 COMMIT_HASH_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 
-# Module-level GitRepository instance (lazy-initialised on first use)
+# Module-level adapters (lazy-initialised on first use)
 _git_repo: git_repo_module.GitRepository | None = None
+_cargo: cargo_build_module.CargoBuildAdapter | None = None
 
 
 def _get_git_repo() -> git_repo_module.GitRepository:
@@ -32,6 +34,16 @@ def _get_git_repo() -> git_repo_module.GitRepository:
     if _git_repo is None:
         _git_repo = git_repo_module.GitRepository(repos_dir=config.REPOS_DIR)
     return _git_repo
+
+
+def _get_cargo() -> cargo_build_module.CargoBuildAdapter:
+    """Return the module-level CargoBuildAdapter, creating it lazily."""
+    global _cargo
+    if _cargo is None:
+        _cargo = cargo_build_module.CargoBuildAdapter(
+            timeout=config.GIT_CARGO_TIMEOUT,
+        )
+    return _cargo
 
 
 def extract_owner_from_url(repo_url: str) -> tuple[str, str]:
@@ -68,10 +80,9 @@ def build_project(repo_path: Path, commit_hash: str, owner: str, ref: str) -> st
         logger.info("Artifact already exists at %s", artifact_path)
         return str(artifact_path)
 
-    _get_git_repo()._run_git(["cargo", "build", "--release"], cwd=repo_path)
+    source = _get_cargo().build(repo_path)
 
     # Copy artifact to our builds directory for persistence
-    source = repo_path / "target" / "release" / "pico_limbo"
     if not source.exists():
         raise FileNotFoundError(
             f"Build artifact not found at {source}. "
