@@ -116,9 +116,15 @@ class GitRepository:
             self._run_git(["git", "checkout", ref], cwd=repo_path)
             logger.info("Checked out commit %s", ref)
             return ref
-        # Fetch the specific branch/tag with depth=1 (shallow-clone friendly)
-        self._run_git(["git", "fetch", "--depth=1", "origin", ref], cwd=repo_path)
-        self._run_git(["git", "checkout", "FETCH_HEAD"], cwd=repo_path)
+        # Try to fetch the specific branch/tag with depth=1
+        try:
+            self._run_git(["git", "fetch", "--depth=1", "origin", ref], cwd=repo_path)
+            self._run_git(["git", "checkout", "FETCH_HEAD"], cwd=repo_path)
+        except RuntimeError:
+            # Fetch failed (e.g., shallow clone already has the ref or
+            # the local ref doesn't exist). Fall back to resolving HEAD
+            # directly — the repo is already checked out to the correct ref.
+            logger.info("Fetch failed for '%s', resolving directly from HEAD", ref)
         output = self._run_git(["git", "rev-parse", "HEAD"], cwd=repo_path)
         commit_hash = output
         logger.info("Branch '%s' resolved to commit %s", ref, commit_hash)
