@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react"
-import { listJobs, cancelJob, resumeJob, type JobInfo } from "@/lib/api"
+import { listJobs, type JobInfo } from "@/lib/api"
 import { cn } from "@/lib/utils"
-import { CheckCircle2, AlertTriangle, Loader2, Circle, Square, Play } from "lucide-react"
+import { CheckCircle2, AlertTriangle, Loader2, Circle } from "lucide-react"
 
 interface JobHistoryListProps {
   activeJob: JobInfo | null
@@ -104,30 +104,6 @@ export function JobHistoryList({
     [onSelectJob]
   )
 
-  const handleCancel = useCallback(
-    async (jobId: string) => {
-      try {
-        await cancelJob(jobId)
-        await fetchJobs()
-      } catch {
-        // Error handling via UI
-      }
-    },
-    [fetchJobs]
-  )
-
-  const handleResume = useCallback(
-    async (jobId: string) => {
-      try {
-        await resumeJob(jobId)
-        await fetchJobs()
-      } catch {
-        // Error handling via UI
-      }
-    },
-    [fetchJobs]
-  )
-
   return (
     <div className="flex-shrink-0 border-border px-4 py-3">
       <div className="mb-2 flex items-center justify-between">
@@ -167,30 +143,6 @@ export function JobHistoryList({
                 )}
               >
                 {getStatusIcon(job.status)}
-                {["queued", "building", "testing"].includes(job.status) && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleCancel(job.job_id)
-                    }}
-                    className="ml-auto flex h-5 w-5 items-center justify-center rounded text-[10px] text-muted-foreground hover:bg-destructive/20 hover:text-destructive"
-                    title="Cancel job"
-                  >
-                    <Square className="size-3" />
-                  </button>
-                )}
-                {["failed", "cancelled"].includes(job.status) && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleResume(job.job_id)
-                    }}
-                    className="ml-auto flex h-5 w-5 items-center justify-center rounded text-[10px] text-muted-foreground hover:bg-primary/20 hover:text-primary"
-                    title="Resume job"
-                  >
-                    <Play className="size-3" />
-                  </button>
-                )}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="truncate font-mono text-[10px]">

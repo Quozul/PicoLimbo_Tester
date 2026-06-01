@@ -372,8 +372,8 @@ class TestTestStepPersistence:
                             with patch("src.orchestration.job_runner.VirtualInputController", return_value=mock_vim):
                                 job_runner._test_step(job, job["versions"], None)
 
-        # 3 versions tested → 7 update_job calls (2 per version: current_step + test_results, +1 final status)
-        assert mock_db_update.call_count == 7
+        # 3 versions tested → 6 update_job calls (2 per version: current_step + test_results)
+        assert mock_db_update.call_count == 6
 
     def test_persisted_test_results_accumulate_correctly(self):
         """Each update_job call includes all results accumulated so far."""
