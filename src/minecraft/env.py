@@ -5,6 +5,7 @@ import os
 from typing import List
 
 from nbtlib import File, List as NbtList, Compound, String, Byte
+from .. import config
 from ..versions import Version
 
 logger = logging.getLogger(__name__)

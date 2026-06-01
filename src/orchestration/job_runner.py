@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from .. import database
-from .. import models
+from .. import config
 from ..builder import engine
 from ..minecraft.env import create_servers_dat
 from ..minecraft.input import VirtualInputController
@@ -21,21 +21,21 @@ from ..proxy.velocity import VelocityProxyManager
 
 logger = logging.getLogger(__name__)
 
-# Estimated seconds per Minecraft version test (for ETA calculation)
-SECONDS_PER_VERSION = 90
-
 # PicoLimbo config for direct (no-proxy) mode
-SERVER_CONFIG_CONTENT = 'bind = "0.0.0.0:25565"\n'
+SERVER_CONFIG_CONTENT = config.SERVER_CONFIG_CONTENT
 
 # servers.dat address (must match server bind)
-SERVER_ADDRESS = "127.0.0.1:25565"
+SERVER_ADDRESS = config.SERVER_ADDRESS
 
 # Internal port PicoLimbo binds to when a proxy is in front of it
-PICO_LIMBO_INTERNAL_PORT = 30066
+PICO_LIMBO_INTERNAL_PORT = config.PICO_LIMBO_INTERNAL_PORT
+
+# Estimated seconds per Minecraft version test (for ETA calculation)
+SECONDS_PER_VERSION = config.SECONDS_PER_VERSION
 
 # Paths
-GAME_DIRECTORY = Path("/app/minecraft")
-SCREENSHOTS_DIR = "/app/integration_tests_reports"
+GAME_DIRECTORY = config.GAME_DIRECTORY
+SCREENSHOTS_DIR = config.SCREENSHOTS_DIR
 
 
 def _now_iso() -> str:
@@ -127,7 +127,7 @@ _VELOCITY_TO_PICOLIMBO_METHOD = {
 }
 
 
-_DEFAULT_FORWARDING_SECRET = VelocityProxyManager._FORWARDING_SECRET
+_DEFAULT_FORWARDING_SECRET = config._FORWARDING_SECRET
 
 
 def _generate_pico_limbo_config(proxy_type: str, forwarding_method: str = "modern") -> str:

@@ -11,25 +11,25 @@ from subprocess import Popen
 
 import httpx
 
+from .. import config
 from .base import ProxyManager
 
 logger = logging.getLogger(__name__)
 
 # PaperMC API base URL for Velocity
-VELOCITY_API_BASE = "https://fill.papermc.io/v3/projects/velocity"
+VELOCITY_API_BASE = config.VELOCITY_API_BASE
 
 # Default proxy cache directory
-PROXY_CACHE_DIR = Path("/app/cache/proxies")
+PROXY_CACHE_DIR = config.PROXY_CACHE_DIR
 
 # Velocity config file name
-VELOCITY_CONFIG_FILENAME = "velocity.toml"
+VELOCITY_CONFIG_FILENAME = config.VELOCITY_CONFIG_FILENAME
 
 # Velocity log patterns for readiness detection
 LOGGING_ON_PATTERN = re.compile(r"Listening on", re.IGNORECASE)
 DONE_PATTERN = re.compile(r"Done", re.IGNORECASE)
 
-
-PLUGINS_DIR = Path("/app/plugins")
+PLUGINS_DIR = config.PLUGINS_DIR
 
 
 class VelocityProxyManager(ProxyManager):
@@ -100,7 +100,7 @@ class VelocityProxyManager(ProxyManager):
         logger.info("Downloaded Velocity jar: %s", jar_path)
         return jar_path
 
-    _FORWARDING_SECRET = "sup3r-s3cr3t"
+    _FORWARDING_SECRET = config._FORWARDING_SECRET
 
     def start(self, config_dir: Path, pico_limbo_port: int, forwarding_method: str = "modern", plugin: str | None = None, plugins: list[str] | None = None) -> Popen:
         """Start the Velocity proxy process.
@@ -228,13 +228,6 @@ class VelocityProxyManager(ProxyManager):
 
         # If we get here, either the process died or timeout was hit
         if proc.poll() is not None:
-            # Read any remaining output
-            try:
-                remaining = proc.stdout.read() if proc.stdout else ""
-            except Exception:
-                remaining = ""
-            if remaining:
-                logger.warning("Velocity output:\n%s", remaining)
             raise RuntimeError(
                 f"Velocity process exited with code {proc.returncode}"
             )

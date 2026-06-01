@@ -460,26 +460,6 @@ class TestValidExtensions:
 # ---------------------------------------------------------------------------
 
 class TestRegionExtraction:
-    def test_passes_correct_bbox_to_grab(self, tmp_path):
-        """ImageGrab.grab should be called with the correct bbox."""
-        ref_size = (100, 100)
-        ref_img = _make_mock_image(ref_size)
-
-        with (
-            _patch_image_open_with_sizes(tmp_path, {"ref.png": ref_size}),
-            patch("src.minecraft.wait_for.ImageGrab.grab", return_value=ref_img),
-            patch("src.minecraft.wait_for.ImageChops.difference", return_value=MagicMock(getbbox=lambda: (0, 0, 1, 1))),
-            patch("src.minecraft.wait_for.time.sleep"),
-            patch("src.minecraft.wait_for.time.monotonic", side_effect=[0.0, 6.0]),
-        ):
-            wait_for_screen_region(str(tmp_path), (10, 20, 100, 100), timeout=5.0)
-
-        # bbox=(x, y, x+width, y+height) = (10, 20, 110, 120)
-        ImageGrab_mock = __import__("unittest.mock").mock.patch("src.minecraft.wait_for.ImageGrab.grab").stop
-        # We can't easily retrieve the mock after exiting the context; re-check via assertion
-        # Instead, re-run with a capturing mock
-        pass
-
     def test_grab_called_with_correct_bbox(self, tmp_path):
         ref_size = (200, 150)
         ref_img = _make_mock_image(ref_size)

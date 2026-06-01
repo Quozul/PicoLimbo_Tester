@@ -10,21 +10,21 @@ import time
 
 import minecraft_launcher_lib
 
+from .. import config
 from .env import create_servers_dat, create_options_txt
 from .input import VirtualInputController
 from .wait_for import wait_for_screen_region
 from PIL import ImageGrab
-from ..versions import Version
 
 logger = logging.getLogger(__name__)
 
-GAME_DIRECTORY = str(pathlib.Path().resolve().joinpath("minecraft"))
+GAME_DIRECTORY = str(config.GAME_DIRECTORY)
 REPORTS_DIRECTORY = "integration_tests_reports"
 
 # Absolute position of the "Quit Game" button within the 1024x768 game window.
 # Computed for the new standard resolution.
-_QUIT_REGION_NEWER = (519, 588, 294, 60)
-_QUIT_REGION_OLDER = (517, 600, 294, 60)
+_QUIT_REGION_NEWER = config._QUIT_REGION_NEWER
+_QUIT_REGION_OLDER = config._QUIT_REGION_OLDER
 
 
 def _is_lwjgl2_version(version: str) -> bool:
@@ -147,14 +147,14 @@ def log_to_multiplayer(
 
     virtual_device._activate()
     # Click on "Multiplayer" button
-    click_in_minecraft_window(virtual_device, 507, 438)
+    click_in_minecraft_window(virtual_device, *config.CLICK_MULTIPLAYER)
     # Click on server's button
     if version.startswith("1.7."):
-        click_in_minecraft_window(virtual_device, 507, 264)
+        click_in_minecraft_window(virtual_device, *config.CLICK_SERVER_BUTTON_1_7)
     else:
-        click_in_minecraft_window(virtual_device, 507, 146)
+        click_in_minecraft_window(virtual_device, *config.CLICK_SERVER_BUTTON_1_8_PLUS)
     # Click on "Join Server" button
-    click_in_minecraft_window(virtual_device, 201, 630)
+    click_in_minecraft_window(virtual_device, *config.CLICK_JOIN_SERVER)
 
 
 def start_minecraft(version: str) -> subprocess.Popen:
@@ -164,10 +164,10 @@ def start_minecraft(version: str) -> subprocess.Popen:
     )
 
     options = minecraft_launcher_lib.utils.generate_test_options()
-    options["jvmArguments"] = ["-Xmx2G", "-Xms2G"]
+    options["jvmArguments"] = config.JVM_ARGS
     options["customResolution"] = True
-    options["resolutionWidth"] = "1024"
-    options["resolutionHeight"] = "768"
+    options["resolutionWidth"] = str(config.RESOLUTION[0])
+    options["resolutionHeight"] = str(config.RESOLUTION[1])
     options["gameDirectory"] = GAME_DIRECTORY
     minecraft_command = minecraft_launcher_lib.command.get_minecraft_command(
         version, minecraft_directory, options

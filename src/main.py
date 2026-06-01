@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import database
+from . import config, database
 from .builder import engine, worker
 from .models import JobCreate, JobInfo, TestResult
 from .orchestration import job_runner
@@ -193,7 +193,7 @@ def list_jobs(
 
 # ─── Plugin Endpoints ────────────────────────────────────────────────────────
 
-PLUGINS_DIR = Path("/app/plugins")
+PLUGINS_DIR = config.PLUGINS_DIR
 
 
 def _ensure_plugins_dir() -> None:

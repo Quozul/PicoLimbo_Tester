@@ -7,7 +7,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-DB_PATH = Path("/app/builds/jobs.db")
+from . import config
+
+DB_PATH = config.DB_PATH
 
 
 def _ensure_db() -> None:

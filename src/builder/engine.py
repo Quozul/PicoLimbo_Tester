@@ -8,11 +8,12 @@ from pathlib import Path
 from typing import Optional
 
 from .. import database
+from .. import config
 
 logger = logging.getLogger(__name__)
 
-REPOS_DIR = Path("/app/repos")
-BUILDS_DIR = Path("/app/builds")
+REPOS_DIR = config.REPOS_DIR
+BUILDS_DIR = config.BUILDS_DIR
 
 # GitHub URL pattern: https://github.com/{owner}/{repo} (with or without .git)
 GITHUB_URL_RE = re.compile(
@@ -20,7 +21,7 @@ GITHUB_URL_RE = re.compile(
 )
 
 # Git commit hash: 40-character hex string
-COMMIT_HASH_RE = re.compile(r"^[0-9a-f]{40}$")
+COMMIT_HASH_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
 def extract_owner_from_url(repo_url: str) -> tuple[str, str]:
@@ -155,8 +156,6 @@ def create_job(
     Resolves the commit hash immediately, so the returned job has
     commit_hash set but artifact_path is null until build finishes.
     """
-    import json
-
     owner, repo_name = extract_owner_from_url(repo_url)
 
     # Ensure repo is cloned (or already exists)

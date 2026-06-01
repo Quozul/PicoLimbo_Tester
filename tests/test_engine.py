@@ -83,10 +83,22 @@ class TestIsCommitHash:
         ) is True
 
     def test_valid_40_char_lowercase_hex(self):
-        # The source regex is [0-9a-f] (lowercase only).
+        # The source regex is [0-9a-fA-F] (case-insensitive hex).
         # This string is all lowercase hex, 40 chars.
         assert engine.is_commit_hash(
             "abcdef0123456789abcdef0123456789abcdef01"
+        ) is True
+
+    def test_valid_40_char_uppercase_hex(self):
+        # Uppercase hex should also be accepted.
+        assert engine.is_commit_hash(
+            "AABBCCDD00112233AABBCCDD00112233AABBCCDD"
+        ) is True
+
+    def test_valid_40_char_mixed_case_hex(self):
+        # Mixed case hex should also be accepted.
+        assert engine.is_commit_hash(
+            "AaBbCcDd00112233AaBbCcDd00112233AaBbCcDd"
         ) is True
 
     def test_branch_name_returns_false(self):

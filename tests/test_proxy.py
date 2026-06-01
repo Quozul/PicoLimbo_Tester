@@ -415,7 +415,7 @@ class TestVelocityProxyManagerLifecycle:
             cmd="java", timeout=5
         )
 
-        with patch.object(subprocess.Popen, "wait") as mock_wait:
+        with patch.object(proc, "wait") as mock_wait:
             mock_wait.side_effect = subprocess.TimeoutExpired(cmd="java", timeout=5)
             # Should not raise — handles timeout gracefully
             manager.stop(proc)
