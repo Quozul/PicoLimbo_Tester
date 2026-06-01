@@ -60,6 +60,16 @@ function formatTimeAgo(dateString: string): string {
   return `${days}d ago`
 }
 
+function formatDuration(ms: number): string {
+  const totalMinutes = Math.floor(ms / 60000)
+  if (totalMinutes < 1) return "<1m"
+  if (totalMinutes < 60) return `${totalMinutes}m`
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  if (minutes === 0) return `${hours}h`
+  return `${hours}h ${minutes}m`
+}
+
 export function JobHistoryList({
   activeJob,
   onSelectJob,
@@ -208,6 +218,19 @@ export function JobHistoryList({
                         )}
                       </>
                     )}
+                    {(job.status === "finished" || job.status === "failed") &&
+                      job.created_at &&
+                      job.updated_at && (
+                        <>
+                          <span>•</span>
+                          <span>
+                            took {formatDuration(
+                              new Date(job.updated_at).getTime() -
+                                new Date(job.created_at).getTime()
+                            )}
+                          </span>
+                        </>
+                      )}
                   </div>
                 </div>
               </div>

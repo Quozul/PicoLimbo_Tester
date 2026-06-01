@@ -35,22 +35,17 @@ export function App() {
             PicoLimbo <span className="text-muted-foreground">Test Runner</span>
           </h1>
         </div>
-        <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-          <span>API: {import.meta.env.VITE_API_URL || "localhost:8000"}</span>
-          <span className="text-border">|</span>
-          <span>VNC: {import.meta.env.VITE_VNC_URL || "localhost:6080"}</span>
-        </div>
       </header>
 
       {/* Main content — 3 columns */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left column — Job Creation */}
-        <div className="flex w-[400px] max-w-[480px] min-w-[320px] flex-col overflow-hidden border-r border-border">
+        <div className="hidden md:flex w-[400px] max-w-[480px] min-w-[320px] flex-col overflow-hidden border-r border-border">
           <JobCreation onJobCreated={handleJobCreated} />
         </div>
 
         {/* Middle column — VNC Viewer */}
-        <div className="flex-1 overflow-hidden">
+        <div className="hidden lg:flex-1 overflow-hidden">
           <VncPanel />
         </div>
 
