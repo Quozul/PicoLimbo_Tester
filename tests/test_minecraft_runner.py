@@ -5,11 +5,11 @@ import time
 
 import pytest
 
+from src.infrastructure.window_manager import parse_window_info
 from src.minecraft.runner import (
     _is_lwjgl2_version,
     capture_screenshot,
     empty_directory,
-    parse_window_info,
 )
 
 
@@ -61,19 +61,19 @@ class TestParseWindowInfo:
     """Tests for parse_window_info."""
 
     def test_valid_input(self):
-        result = parse_window_info("Position: 100, 200\nGeometry: 1024x768")
+        result = parse_window_info("width=1024  height=768\nx=100\ty=200")
         assert result == {"x": 100, "y": 200, "width": 1024, "height": 768}
 
     def test_valid_input_different_values(self):
-        result = parse_window_info("Position: 0, 0\nGeometry: 1920x1080")
+        result = parse_window_info("width=1920  height=1080\nx=0\ty=0")
         assert result == {"x": 0, "y": 0, "width": 1920, "height": 1080}
 
     def test_missing_position(self):
-        result = parse_window_info("Geometry: 1024x768")
+        result = parse_window_info("width=1024  height=768")
         assert result is None
 
     def test_missing_geometry(self):
-        result = parse_window_info("Position: 100, 200")
+        result = parse_window_info("x=100\ty=200")
         assert result is None
 
     def test_garbled_input(self):
@@ -85,7 +85,7 @@ class TestParseWindowInfo:
         assert result is None
 
     def test_whitespace_around_values(self):
-        result = parse_window_info("Position: 50, 150\nGeometry: 800x600")
+        result = parse_window_info("width=800  height=600\nx=50\ty=150")
         assert result == {"x": 50, "y": 150, "width": 800, "height": 600}
 
 
@@ -130,11 +130,10 @@ class TestEmptyDirectory:
 class TestCaptureScreenshot:
     """Tests for capture_screenshot – captures a window via ImageGrab."""
 
-    def test_saves_screenshot_at_window_position(self, tmp_path):
+    def test_saves_screenshot_with_correct_filename(self, tmp_path):
         """Screenshot is saved to screenshots_dir with correct filename."""
         from unittest.mock import MagicMock, patch
 
-        mock_window_info = {"x": 100, "y": 200, "width": 1024, "height": 768}
         screenshots_dir = str(tmp_path / "screenshots")
 
         # ImageGrab.grab returns a mock image; .convert("RGB") returns
@@ -143,7 +142,6 @@ class TestCaptureScreenshot:
         mock_image.convert.return_value = mock_image
 
         with (
-            patch("src.minecraft.runner.get_window_info", return_value=mock_window_info),
             patch("src.minecraft.runner.ImageGrab.grab", return_value=mock_image),
             patch("os.makedirs"),
         ):
@@ -164,14 +162,14 @@ class TestCaptureScreenshot:
         assert captured_save_args[0][0] == result_path
 
     def test_uses_full_screen_capture(self):
-        """capture_screenshot uses full screen capture (no window info needed)."""
+        """capture_screenshot uses full screen capture (no bbox argument)."""
         from unittest.mock import MagicMock, patch
 
         mock_image = MagicMock()
         mock_image.convert.return_value = mock_image
 
         with (
-            patch("src.minecraft.runner.ImageGrab.grab", return_value=mock_image),
+            patch("src.minecraft.runner.ImageGrab.grab", return_value=mock_image) as grab_mock,
             patch("os.makedirs"),
         ):
             result_path = capture_screenshot(
@@ -184,24 +182,24 @@ class TestCaptureScreenshot:
         # Should save successfully without needing window info
         mock_image.save.assert_called_once()
         assert result_path is not None
+        # Verify grab was called without bbox
+        grab_mock.assert_called_once_with()
 
-    def test_captures_full_screen(self, tmp_path):
+    def test_captures_full_screen_no_bbox(self, tmp_path):
         """ImageGrab.grab is called without bbox to capture the full screen."""
         from unittest.mock import MagicMock, patch
 
-        mock_window_info = {"x": 50, "y": 100, "width": 800, "height": 600}
         mock_image = MagicMock()
         screenshots_dir = str(tmp_path / "screenshots")
 
-        with patch("src.minecraft.runner.get_window_info", return_value=mock_window_info):
-            with patch("src.minecraft.runner.ImageGrab.grab", return_value=mock_image) as grab_mock:
-                with patch("os.makedirs"):
-                    capture_screenshot(
-                        version="1.19.3",
-                        commit_hash="deadbeef",
-                        window_id="fake_window",
-                        screenshots_dir=screenshots_dir,
-                    )
+        with patch("src.minecraft.runner.ImageGrab.grab", return_value=mock_image) as grab_mock:
+            with patch("os.makedirs"):
+                capture_screenshot(
+                    version="1.19.3",
+                    commit_hash="deadbeef",
+                    window_id="fake_window",
+                    screenshots_dir=screenshots_dir,
+                )
 
         # ImageGrab.grab is called without bbox to capture full screen
         grab_mock.assert_called_once_with()
@@ -210,12 +208,11 @@ class TestCaptureScreenshot:
         """The saved filename contains the version and short commit hash."""
         from unittest.mock import MagicMock, patch
 
-        mock_window_info = {"x": 0, "y": 0, "width": 1024, "height": 768}
         mock_image = MagicMock()
+        mock_image.convert.return_value = mock_image
         screenshots_dir = str(tmp_path / "screenshots")
 
         with (
-            patch("src.minecraft.runner.get_window_info", return_value=mock_window_info),
             patch("src.minecraft.runner.ImageGrab.grab", return_value=mock_image),
             patch("os.makedirs"),
         ):

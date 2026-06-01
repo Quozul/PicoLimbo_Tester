@@ -3,13 +3,13 @@
 import logging
 import os
 import pathlib
-import re
 import shutil
 import subprocess
 import time
 
 from .. import config
 from ..infrastructure.minecraft_launcher import MinecraftLauncher
+from ..infrastructure.window_manager import WindowManager
 from .env import create_servers_dat, create_options_txt
 from .input import VirtualInputController
 from .wait_for import wait_for_screen_region
@@ -19,12 +19,13 @@ logger = logging.getLogger(__name__)
 
 REPORTS_DIRECTORY = "integration_tests_reports"
 
-# Shared launcher instance configured from the module-level config.
+# Shared launcher and window manager instances.
 _launcher = MinecraftLauncher(
     game_directory=config.GAME_DIRECTORY,
     jvm_args=config.JVM_ARGS,
     resolution=config.RESOLUTION,
 )
+_wm = WindowManager()
 
 # Absolute position of the "Quit Game" button within the 1024x768 game window.
 # Computed for the new standard resolution.
@@ -40,46 +41,6 @@ def _is_lwjgl2_version(version: str) -> bool:
         return (major, minor) <= (1, 12)
     except ValueError:
         return False
-
-
-def parse_window_info(window_text: str) -> dict | None:
-    position_match = re.search(r"Position:\s*(\d+),\s*(\d+)", window_text)
-    geometry_match = re.search(r"Geometry:\s*(\d+)\s*x\s*(\d+)", window_text)
-
-    if not (position_match and geometry_match):
-        return None
-
-    x = int(position_match.group(1))
-    y = int(position_match.group(2))
-    width = int(geometry_match.group(1))
-    height = int(geometry_match.group(2))
-
-    return {"x": x, "y": y, "width": width, "height": height}
-
-
-def get_minecraft_window() -> str | None:
-    for title in ["Minecraft*", "Minecraft", "Minecraft 1.13"]:
-        result = subprocess.run(
-            ["xdotool", "search", "--name", title], capture_output=True, text=True
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip().split("\n")[0]
-
-    result = subprocess.run(
-        ["xdotool", "search", "--class", "java"], capture_output=True, text=True
-    )
-    if result.returncode == 0 and result.stdout.strip():
-        return result.stdout.strip().split("\n")[-1]
-
-    return None
-
-
-def get_window_info(window_id: str) -> dict | None:
-    result = subprocess.run(
-        ["xdotool", "getwindowgeometry", window_id], capture_output=True, text=True
-    )
-    result = result.stdout.strip()
-    return parse_window_info(result)
 
 
 def click_in_minecraft_window(
@@ -104,9 +65,16 @@ def wait_for_game(version: str) -> str:
     # Older versions (LWJGL 2) create transient splash/init windows that disappear
     # before xdotool can query them, so we need the check inside the loop.
     while time.time() < deadline:
-        wid = get_minecraft_window()
+        wid = _wm.search_by_name("Minecraft")
+        if not wid:
+            wid = _wm.search_by_name("Minecraft*")
+        if not wid:
+            wid = _wm.search_by_name("Minecraft 1.13")
+        if not wid:
+            wid = _wm.search_by_class("java")
+
         if wid:
-            info = get_window_info(wid)
+            info = _wm.get_geometry(wid)
             if info:
                 window_id = wid
                 window_info = info
@@ -120,9 +88,7 @@ def wait_for_game(version: str) -> str:
     # Move the window to (0,0) so that window-relative coordinates
     # equal absolute screen coordinates.
     if _is_lwjgl2_version(version):
-        subprocess.run(
-            ["xdotool", "windowmove", window_id, "0", "0"], capture_output=True
-        )
+        _wm.move_to(window_id, 0, 0)
         time.sleep(0.3)
 
     watch_region = (
@@ -144,7 +110,7 @@ def wait_for_game(version: str) -> str:
 def log_to_multiplayer(
     version: str, virtual_device: VirtualInputController, window_id: str
 ) -> None:
-    window_info = get_window_info(window_id)
+    window_info = _wm.get_geometry(window_id)
     if not window_info:
         raise Exception(f"Could not get window geometry for {version}")
 
