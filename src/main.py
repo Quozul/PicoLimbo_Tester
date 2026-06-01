@@ -384,3 +384,29 @@ def cancel_job(job_id: str):
 
     updated = database.update_job(job_id, status="cancelled")
     return updated
+
+
+@app.post(
+    "/jobs/{job_id}/resume",
+    response_model=JobInfo,
+    status_code=200,
+    summary="Resume a cancelled or failed job from where it left off",
+)
+def resume_job(job_id: str):
+    """Resume a job from its last completed step.
+
+    Keeps existing test_results and artifact_path. Only re-runs steps that weren't completed.
+    Returns 404 if job not found, 400 if job is not in a resumable state.
+    """
+    job = database.get_job_by_id(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job["status"] not in ("failed", "cancelled"):
+        raise HTTPException(
+            status_code=400,
+            detail="Job can only be resumed from 'failed' or 'cancelled' state",
+        )
+
+    updated = database.update_job(job_id, status="queued", error_message=None)
+    return updated

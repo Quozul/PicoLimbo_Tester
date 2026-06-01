@@ -232,17 +232,23 @@ def _server_step(
     return proxy_proc, pico_limbo_proc
 
 
-def _test_step(job: dict, versions: list[str], server_proc: Optional[subprocess.Popen]) -> dict:
+def _test_step(
+    job: dict,
+    versions: list[str],
+    server_proc: Optional[subprocess.Popen],
+    resume_from: Optional[dict] = None,
+) -> dict:
     """Run Minecraft tests for all versions.
 
-    Always re-runs tests for every version — a previously captured screenshot
-    does not guarantee the test truly passed, so we never skip a version.
+    Skips already-completed versions when resuming from a failed/cancelled state.
 
     Returns updated test_results dict.
     """
     job_id = job["job_id"]
     commit_hash = job["commit_hash"]
-    test_results = dict(job.get("test_results") or {})
+
+    # Initialize test_results: use existing results if resuming
+    test_results = resume_from if resume_from else dict(job.get("test_results") or {})
 
     # Ensure screenshots directory exists
     os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
@@ -259,6 +265,12 @@ def _test_step(job: dict, versions: list[str], server_proc: Optional[subprocess.
             if current and current["status"] == "cancelled":
                 database.update_job(job_id, status="failed", error_message="Job was cancelled")
                 return test_results
+
+            # Skip already-tested versions when resuming
+            if version in test_results:
+                logger.info("Job %s: skipping already-tested version %s", job_id, version)
+                continue
+
             logger.info("Job %s: testing version %s", job_id, version)
             _update_job(job_id, current_step=f"testing:{version}")
             result = test_single_version(version, commit_hash, virtual_device, SCREENSHOTS_DIR, login_wait_timeout)
@@ -270,8 +282,30 @@ def _test_step(job: dict, versions: list[str], server_proc: Optional[subprocess.
                 test_results=json.dumps(test_results),
             )
 
+        # Update final status
+        all_passed = all(r.get("passed", False) for r in test_results.values())
+        if all_passed:
+            _update_job(
+                job_id,
+                status="finished",
+                current_step="finished",
+                test_results=json.dumps(test_results),
+                eta_seconds=0,
+            )
+        else:
+            _update_job(
+                job_id,
+                status="failed",
+                current_step="finished",
+                test_results=json.dumps(test_results),
+            )
+
+    except Exception as e:
+        _update_job(job_id, status="failed", error_message=str(e))
+        raise
     finally:
         virtual_device.close()
+        _kill_server(None, server_proc)
 
     return test_results
 
@@ -305,58 +339,76 @@ def _kill_server(
 
 
 def run_job(job_id: str) -> None:
-    """Run all steps for a job."""
-    job = database.get_job_by_id(job_id)
-    if not job:
+    """Run all steps for a job.
+
+    If resuming from a failed/cancelled state, skips already-completed steps:
+    - Build is skipped if artifact_path already exists in the database
+    - Testing skips versions that already have test_results
+    """
+    current = database.get_job_by_id(job_id)
+    if not current:
         logger.error("Job %s not found", job_id)
         return
 
-    versions = job.get("versions") or []
+    versions = current.get("versions") or []
     if not versions:
         # Default to all versions if none specified
         from ..versions import ALL_VERSIONS
         versions = [str(v) for v in ALL_VERSIONS]
         database.update_job(job_id, versions=json.dumps(versions))
 
-    proxy_type = job.get("proxy", "none") or "none"
-    logger.info("Job %s: proxy_type=%r", job_id, proxy_type)
+    # Re-fetch after update in case versions changed
+    current = database.get_job_by_id(job_id)
+
+    # Check if we're resuming (has artifact_path and test_results)
+    is_resuming = current and current.get("artifact_path") and current.get("test_results")
+    resume_data = json.loads(current["test_results"]) if is_resuming else {}
+
+    proxy_type = current.get("proxy", "none") or "none"
+    logger.info("Job %s: proxy_type=%r, resuming=%s", job_id, proxy_type, is_resuming)
 
     proxy_proc: Optional[subprocess.Popen] = None
     pico_limbo_proc: Optional[subprocess.Popen] = None
 
     try:
-        # --- Build step ---
-        _update_job(job_id, status="building", current_step="building")
-        skipped, artifact_path = _build_step(job)
-        if skipped:
-            logger.info("Job %s: build skipped (artifact already exists)", job_id)
+        # --- Build step (skip if resuming with artifact) ---
+        if is_resuming:
+            artifact_path = current["artifact_path"]
+            logger.info("Job %s: resuming, build already done", job_id)
         else:
-            logger.info("Job %s: build completed", job_id)
-        _update_job(
-            job_id,
-            status="testing",
-            current_step="testing",
-            artifact_path=artifact_path,
-        )
+            _update_job(job_id, status="building", current_step="building")
+            job = database.get_job_by_id(job_id)
+            skipped, artifact_path = _build_step(job)
+            if skipped:
+                logger.info("Job %s: build skipped (artifact already exists)", job_id)
+            else:
+                logger.info("Job %s: build completed", job_id)
+            artifact_path = job.get("artifact_path") or artifact_path
+
+        if not artifact_path:
+            raise RuntimeError("Build did not produce an artifact")
+
+        _update_job(job_id, status="testing", current_step="testing", artifact_path=artifact_path)
 
         # --- Server step ---
-        # Re-fetch job in case artifact_path was just set
         job = database.get_job_by_id(job_id)
         proxy_proc, pico_limbo_proc = _server_step(job, versions, proxy_type)
 
-        # --- Test step ---
+        # --- Test step (with resume support) ---
         _update_job(job_id, current_step="testing")
         job = database.get_job_by_id(job_id)
-        test_results = _test_step(job, versions, pico_limbo_proc)
+        test_results = _test_step(job, versions, pico_limbo_proc, resume_data if is_resuming else None)
 
-        # --- Done ---
-        _update_job(
-            job_id,
-            status="finished",
-            current_step="finished",
-            test_results=json.dumps(test_results),
-            eta_seconds=0,
-        )
+        # --- Done (only if not already set by _test_step during resume) ---
+        if not is_resuming:
+            _update_job(
+                job_id,
+                status="finished",
+                current_step="finished",
+                test_results=json.dumps(test_results),
+                eta_seconds=0,
+            )
+
         logger.info("Job %s finished successfully", job_id)
 
     except Exception as e:

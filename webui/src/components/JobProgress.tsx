@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import {
   createJobPoller,
   retryJob,
+  resumeJob,
   cancelJob,
   listScreenshots,
   getScreenshotUrl,
@@ -21,6 +22,7 @@ import {
   AlertTriangle,
   Download,
   ExternalLink,
+  Play,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -215,6 +217,23 @@ export function JobProgress({ job }: JobProgressProps) {
     }
   }, [currentJob.job_id])
 
+  const handleResume = useCallback(async () => {
+    setLoading(true)
+    try {
+      const updated = await resumeJob(currentJob.job_id)
+      setCurrentJob(updated)
+      // Restart polling
+      pollerRef.current?.stop()
+      pollerRef.current = createJobPoller(updated.job_id, (newJob) => {
+        setCurrentJob(newJob)
+      })
+    } catch {
+      // Error handling via UI
+    } finally {
+      setLoading(false)
+    }
+  }, [currentJob.job_id])
+
   const overallProgress = getOverallProgress(currentJob)
   const passed = (
     Object.values(currentJob.test_results) as { passed: boolean }[]
@@ -279,6 +298,22 @@ export function JobProgress({ job }: JobProgressProps) {
                 <RotateCcw className="size-3" />
               )}
               Retry
+            </Button>
+          )}
+          {["failed", "cancelled"].includes(currentJob.status) && (
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={handleResume}
+              disabled={loading}
+              className="h-5 gap-1 px-1.5 text-[10px] text-primary hover:bg-primary/10"
+            >
+              {loading ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <Play className="size-3" />
+              )}
+              Resume
             </Button>
           )}
         </div>

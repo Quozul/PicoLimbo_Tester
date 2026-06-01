@@ -168,6 +168,17 @@ export async function cancelJob(jobId: string): Promise<JobInfo> {
 }
 
 /**
+ * POST /jobs/{job_id}/resume
+ * Resume a cancelled or failed job from where it left off.
+ */
+export async function resumeJob(jobId: string): Promise<JobInfo> {
+  const data = await request<JobInfo>(`POST`, `/jobs/${jobId}/resume`, {
+    method: "POST",
+  })
+  return JobInfoSchema.parse(data)
+}
+
+/**
  * POST /plugins/upload
  * Upload a Velocity plugin .jar file.
  */
