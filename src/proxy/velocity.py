@@ -9,18 +9,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from subprocess import Popen
 
-import httpx
-
 from .. import config
+from ..infrastructure.artifact_repository import ArtifactRepository
 from .base import ProxyManager
 
 logger = logging.getLogger(__name__)
-
-# PaperMC API base URL for Velocity
-VELOCITY_API_BASE = config.VELOCITY_API_BASE
-
-# Default proxy cache directory
-PROXY_CACHE_DIR = config.PROXY_CACHE_DIR
 
 # Velocity config file name
 VELOCITY_CONFIG_FILENAME = config.VELOCITY_CONFIG_FILENAME
@@ -35,15 +28,27 @@ PLUGINS_DIR = config.PLUGINS_DIR
 class VelocityProxyManager(ProxyManager):
     """Manages Velocity proxy lifecycle: download, configure, start, stop."""
 
-    def __init__(self, cache_dir: Path | None = None):
+    def __init__(
+        self,
+        cache_dir: Path | None = None,
+        artifact_repo: ArtifactRepository | None = None,
+    ) -> None:
         """Initialize the Velocity proxy manager.
 
         Args:
-            cache_dir: Directory to cache Velocity jars. Defaults to /app/cache/proxies/velocity/.
+            cache_dir: Directory to cache Velocity jars.
+                Defaults to ``config.PROXY_CACHE_DIR / "velocity"``.
+            artifact_repo: Pre-configured ``ArtifactRepository``.
+                If ``None``, one is created from *cache_dir* and
+                ``config.VELOCITY_API_BASE``.
         """
-        self._cache_dir = cache_dir or PROXY_CACHE_DIR / "velocity"
+        self._cache_dir = cache_dir or config.PROXY_CACHE_DIR / "velocity"
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._metadata_file = self._cache_dir / "metadata.json"
+        self._artifact_repo = artifact_repo or ArtifactRepository(
+            api_base=config.VELOCITY_API_BASE,
+            cache_dir=self._cache_dir,
+        )
 
     def download_if_needed(self) -> Path:
         """Download Velocity jar if not already cached.
@@ -60,7 +65,7 @@ class VelocityProxyManager(ProxyManager):
         if cached_jar is not None and cached_jar.exists():
             # Check if the cached version is still the latest
             try:
-                latest_mc_version = self._get_latest_mc_version()
+                latest_mc_version = self._artifact_repo.get_latest_mc_version()
                 if cached_mc_version == latest_mc_version:
                     logger.info("Using cached Velocity jar: %s", cached_jar)
                     return cached_jar
@@ -78,9 +83,9 @@ class VelocityProxyManager(ProxyManager):
         # Download the latest version
         if latest_mc_version is None:
             logger.info("No cached Velocity jar found, downloading latest...")
-            latest_mc_version = self._get_latest_mc_version()
+            latest_mc_version = self._artifact_repo.get_latest_mc_version()
         mc_version = latest_mc_version
-        download_url = self._get_velocity_download_url(mc_version)
+        download_url = self._artifact_repo.get_download_url(mc_version)
         if download_url is None:
             raise RuntimeError(
                 f"No stable Velocity build found for MC version {mc_version}"
@@ -92,7 +97,7 @@ class VelocityProxyManager(ProxyManager):
         logger.info(
             "Downloading Velocity from %s (MC %s)", download_url, mc_version
         )
-        self._download_file(download_url, jar_path)
+        self._artifact_repo.download(download_url, jar_path)
 
         # Save metadata
         self._save_metadata(mc_version)
@@ -299,104 +304,6 @@ class VelocityProxyManager(ProxyManager):
             f'\n'
             f'[forced-hosts]\n'
         )
-
-    def _get_latest_mc_version(self) -> str:
-        """Get the latest Minecraft version that has a stable Velocity build.
-
-        Returns:
-            The latest Minecraft version string.
-        """
-        logger.debug(
-            "Fetching latest Velocity MC version from %s/versions",
-            VELOCITY_API_BASE,
-        )
-        try:
-            resp = httpx.get(f"{VELOCITY_API_BASE}/versions", timeout=30.0)
-            resp.raise_for_status()
-            data = resp.json()
-            # API v3 returns {"versions": [{"version": {"id": "3.5.0"}, "builds": [...]}, ...]}
-            versions_list = data.get("versions", [])
-            if not versions_list:
-                raise RuntimeError("No Minecraft versions found for Velocity on PaperMC API")
-            logger.debug("Available Velocity versions (first 5): %s", [v.get("version", {}).get("id") for v in versions_list[:5]])
-            return versions_list[0]["version"]["id"]
-        except httpx.HTTPError as e:
-            raise RuntimeError(f"Failed to fetch Velocity versions from PaperMC API: {e}")
-
-    def _get_velocity_download_url(self, mc_version: str) -> str | None:
-        """Get the download URL for the latest stable Velocity build.
-
-        Args:
-            mc_version: Minecraft version to get the build for.
-
-        Returns:
-            The download URL, or None if no stable build found.
-        """
-        logger.debug(
-            "Fetching Velocity builds for MC %s from %s/versions/%s/builds",
-            mc_version,
-            VELOCITY_API_BASE,
-            mc_version,
-        )
-        try:
-            resp = httpx.get(
-                f"{VELOCITY_API_BASE}/versions/{mc_version}/builds", timeout=30.0
-            )
-            resp.raise_for_status()
-            builds = resp.json()
-            # API v3 returns a list: [{"id": 102, "channel": "STABLE", "downloads": {"server:default": {"url": "..."}}, ...}]
-            if not isinstance(builds, list):
-                logger.warning("Expected list of builds, got %s", type(builds))
-                return None
-            if not builds:
-                logger.warning("No builds found for MC version %s", mc_version)
-                return None
-
-            # Find the latest stable build (list is ordered by ID descending)
-            stable_builds = [b for b in builds if b.get("channel") == "STABLE"]
-            if not stable_builds:
-                logger.warning("No stable builds found for MC version %s", mc_version)
-                return None
-
-            latest = stable_builds[0]
-            # Download URL is at downloads["server:default"]["url"]
-            download_info = latest.get("downloads", {}).get("server:default")
-            if not download_info:
-                logger.warning(
-                    "No default server download found for Velocity build %s",
-                    latest.get("id"),
-                )
-                return None
-
-            url = download_info.get("url")
-            if not url:
-                logger.warning("No download URL found for build %s", latest.get("id"))
-                return None
-
-            logger.debug("Velocity build %s: %s", latest.get("id"), url)
-            return url
-        except httpx.HTTPError as e:
-            raise RuntimeError(
-                f"Failed to fetch Velocity builds for MC {mc_version}: {e}"
-            )
-
-    def _download_file(self, url: str, dest: Path) -> None:
-        """Download a file from a URL.
-
-        Args:
-            url: The URL to download from.
-            dest: The destination path for the downloaded file.
-        """
-        try:
-            resp = httpx.get(url, timeout=120.0, follow_redirects=True)
-            resp.raise_for_status()
-            dest.write_bytes(resp.content)
-            logger.debug("Downloaded %d bytes to %s", len(resp.content), dest)
-        except httpx.HTTPError as e:
-            # Clean up partial download
-            if dest.exists():
-                dest.unlink()
-            raise RuntimeError(f"Failed to download {url}: {e}")
 
     def _load_cached_version(self) -> tuple[Path | None, str | None]:
         """Load the cached version info from metadata.

@@ -94,17 +94,18 @@ class TestBuildStepArtifactExists:
         with patch.object(job_runner.database, "update_job") as mock_db_update:
             mock_db_update.return_value = job
 
-            with patch("src.orchestration.job_runner.engine.ensure_repo_cloned") as mock_clone:
-                with patch("src.orchestration.job_runner.engine.update_repo") as mock_update:
-                    with patch("src.orchestration.job_runner.engine.resolve_commit", return_value=commit_hash) as mock_resolve:
-                        with patch.object(job_runner.engine, "BUILDS_DIR", mock_artifact_dir):
-                            skipped, result_path = job_runner._build_step(job)
+            mock_repo = MagicMock()
+            mock_repo.clone.return_value = "/repos/Quozul/PicoLimbo"
+            mock_repo.resolve.return_value = commit_hash
+
+            with patch.object(job_runner.engine, "_get_git_repo", return_value=mock_repo):
+                with patch.object(job_runner.engine, "BUILDS_DIR", mock_artifact_dir):
+                    skipped, result_path = job_runner._build_step(job)
 
         assert skipped is True
         assert result_path == artifact_path
-        mock_clone.assert_called_once()
-        mock_update.assert_called_once()
-        mock_resolve.assert_called_once()
+        mock_repo.clone.assert_called_once_with(job["owner"], "PicoLimbo")
+        mock_repo.resolve.assert_called_once()
         # build_project must NOT be called when artifact exists
         with patch("src.orchestration.job_runner.engine.build_project") as mock_build:
             pass
@@ -131,26 +132,25 @@ class TestBuildStepArtifactExists:
 
         call_order = []
 
+        mock_repo = MagicMock()
+
         def track_clone(owner, repo):
-            call_order.append("ensure_repo_cloned")
+            call_order.append("clone")
             return "/repos/Quozul/PicoLimbo"
 
-        def track_update(repo_path, ref):
-            call_order.append("update_repo")
-            return None
-
         def track_resolve(repo_path, ref):
-            call_order.append("resolve_commit")
+            call_order.append("resolve")
             return commit_hash
+
+        mock_repo.clone.side_effect = track_clone
+        mock_repo.resolve.side_effect = track_resolve
 
         with patch.object(job_runner.database, "update_job", return_value=job):
             with patch.object(job_runner.engine, "BUILDS_DIR", mock_artifact_dir):
-                with patch("src.orchestration.job_runner.engine.ensure_repo_cloned", side_effect=track_clone):
-                    with patch("src.orchestration.job_runner.engine.update_repo", side_effect=track_update):
-                        with patch("src.orchestration.job_runner.engine.resolve_commit", side_effect=track_resolve):
-                            job_runner._build_step(job)
+                with patch.object(job_runner.engine, "_get_git_repo", return_value=mock_repo):
+                    job_runner._build_step(job)
 
-        assert call_order == ["ensure_repo_cloned", "update_repo", "resolve_commit"]
+        assert call_order == ["clone", "resolve"]
 
 
 # ---------------------------------------------------------------------------
@@ -177,18 +177,19 @@ class TestBuildStepArtifactMissing:
         with patch.object(job_runner.database, "update_job") as mock_db_update:
             mock_db_update.return_value = job
 
-            with patch("src.orchestration.job_runner.engine.ensure_repo_cloned", return_value="/repos/Quozul/PicoLimbo") as mock_clone:
-                with patch("src.orchestration.job_runner.engine.update_repo") as mock_update:
-                    with patch("src.orchestration.job_runner.engine.resolve_commit", return_value=commit_hash) as mock_resolve:
-                        with patch("src.orchestration.job_runner.engine.build_project") as mock_build:
-                            mock_build.return_value = artifact_path
+            mock_repo = MagicMock()
+            mock_repo.clone.return_value = "/repos/Quozul/PicoLimbo"
+            mock_repo.resolve.return_value = commit_hash
 
-                            with patch.object(job_runner.engine, "BUILDS_DIR", mock_artifact_dir):
-                                skipped, result_path = job_runner._build_step(job)
+            with patch("src.orchestration.job_runner.engine.build_project") as mock_build:
+                mock_build.return_value = artifact_path
 
-        assert mock_clone.called
-        assert mock_update.called
-        assert mock_resolve.called
+                with patch.object(job_runner.engine, "_get_git_repo", return_value=mock_repo):
+                    with patch.object(job_runner.engine, "BUILDS_DIR", mock_artifact_dir):
+                        skipped, result_path = job_runner._build_step(job)
+
+        assert mock_repo.clone.called
+        assert mock_repo.resolve.called
 
         assert skipped is False
         assert result_path == artifact_path
@@ -217,12 +218,14 @@ class TestBuildStepArtifactMissing:
         with patch.object(job_runner.database, "update_job") as mock_db_update:
             mock_db_update.return_value = job
 
-            with patch("src.orchestration.job_runner.engine.ensure_repo_cloned", return_value="/repos/Quozul/PicoLimbo"):
-                with patch("src.orchestration.job_runner.engine.update_repo"):
-                    with patch("src.orchestration.job_runner.engine.resolve_commit", return_value=commit_hash):
-                        with patch("src.orchestration.job_runner.engine.build_project", return_value="/app/builds/Quozul/main/abc/pico_limbo"):
-                            with patch.object(job_runner.engine, "BUILDS_DIR", mock_artifact_dir):
-                                job_runner._build_step(job)
+            mock_repo = MagicMock()
+            mock_repo.clone.return_value = "/repos/Quozul/PicoLimbo"
+            mock_repo.resolve.return_value = commit_hash
+
+            with patch("src.orchestration.job_runner.engine.build_project", return_value="/app/builds/Quozul/main/abc/pico_limbo"):
+                with patch.object(job_runner.engine, "_get_git_repo", return_value=mock_repo):
+                    with patch.object(job_runner.engine, "BUILDS_DIR", mock_artifact_dir):
+                        job_runner._build_step(job)
 
         # First call should be for commit_hash persistence
         commit_hash_calls = [
@@ -550,16 +553,17 @@ class TestRunJobArtifactSkip:
         with patch.object(job_runner.database, "get_job_by_id", return_value=job):
             with patch.object(job_runner.database, "update_job", side_effect=track_update):
                 with patch.object(job_runner.engine, "BUILDS_DIR", mock_artifact_dir):
-                    with patch("src.orchestration.job_runner.engine.ensure_repo_cloned", return_value="/repos/Quozul/PicoLimbo"):
-                        with patch("src.orchestration.job_runner.engine.update_repo"):
-                            with patch("src.orchestration.job_runner.engine.resolve_commit", return_value=commit_hash):
-                                with patch("src.orchestration.job_runner._server_step", return_value=(None, MagicMock())):
-                                    with patch("src.orchestration.job_runner.test_single_version", return_value=_make_test_result("3.10")):
-                                        with patch("src.orchestration.job_runner.empty_directory"):
-                                            with patch("src.orchestration.job_runner.os.makedirs"):
-                                                with patch("src.orchestration.job_runner.VirtualInputController") as mock_vim:
-                                                    mock_vim.return_value.close = MagicMock()
-                                                    job_runner.run_job("job0000000000000000")
+                    mock_repo = MagicMock()
+                    mock_repo.clone.return_value = "/repos/Quozul/PicoLimbo"
+                    mock_repo.resolve.return_value = commit_hash
+                    with patch.object(job_runner.engine, "_get_git_repo", return_value=mock_repo):
+                        with patch("src.orchestration.job_runner._server_step", return_value=(None, MagicMock())):
+                            with patch("src.orchestration.job_runner.test_single_version", return_value=_make_test_result("3.10")):
+                                with patch("src.orchestration.job_runner.empty_directory"):
+                                    with patch("src.orchestration.job_runner.os.makedirs"):
+                                        with patch("src.orchestration.job_runner.VirtualInputController") as mock_vim:
+                                            mock_vim.return_value.close = MagicMock()
+                                            job_runner.run_job("job0000000000000000")
 
         # Status should transition: building → testing → finished
         assert "building" in status_transitions
@@ -584,17 +588,18 @@ class TestRunJobArtifactSkip:
         with patch.object(job_runner.database, "get_job_by_id", return_value=job):
             with patch.object(job_runner.database, "update_job", return_value=job):
                 with patch.object(job_runner.engine, "BUILDS_DIR", mock_artifact_dir):
-                    with patch("src.orchestration.job_runner.engine.ensure_repo_cloned", return_value="/repos/Quozul/PicoLimbo"):
-                        with patch("src.orchestration.job_runner.engine.update_repo"):
-                            with patch("src.orchestration.job_runner.engine.resolve_commit", return_value=commit_hash):
-                                with patch("src.orchestration.job_runner.engine.build_project") as mock_build:
-                                    with patch("src.orchestration.job_runner._server_step", return_value=(None, MagicMock())):
-                                        with patch("src.orchestration.job_runner.test_single_version", return_value=_make_test_result("3.10")):
-                                            with patch("src.orchestration.job_runner.empty_directory"):
-                                                with patch("src.orchestration.job_runner.os.makedirs"):
-                                                    with patch("src.orchestration.job_runner.VirtualInputController") as mock_vim:
-                                                        mock_vim.return_value.close = MagicMock()
-                                                        job_runner.run_job("job0000000000000000")
+                    mock_repo = MagicMock()
+                    mock_repo.clone.return_value = "/repos/Quozul/PicoLimbo"
+                    mock_repo.resolve.return_value = commit_hash
+                    with patch.object(job_runner.engine, "_get_git_repo", return_value=mock_repo):
+                        with patch("src.orchestration.job_runner.engine.build_project") as mock_build:
+                            with patch("src.orchestration.job_runner._server_step", return_value=(None, MagicMock())):
+                                with patch("src.orchestration.job_runner.test_single_version", return_value=_make_test_result("3.10")):
+                                    with patch("src.orchestration.job_runner.empty_directory"):
+                                        with patch("src.orchestration.job_runner.os.makedirs"):
+                                            with patch("src.orchestration.job_runner.VirtualInputController") as mock_vim:
+                                                mock_vim.return_value.close = MagicMock()
+                                                job_runner.run_job("job0000000000000000")
 
         mock_build.assert_not_called()
 
@@ -628,17 +633,18 @@ class TestRunJobServerStarted:
         with patch.object(job_runner.database, "get_job_by_id", return_value=job):
             with patch.object(job_runner.database, "update_job", return_value=job):
                 with patch.object(job_runner.engine, "BUILDS_DIR", mock_artifact_dir):
-                    with patch("src.orchestration.job_runner.engine.ensure_repo_cloned", return_value="/repos/Quozul/PicoLimbo"):
-                        with patch("src.orchestration.job_runner.engine.update_repo"):
-                            with patch("src.orchestration.job_runner.engine.resolve_commit", return_value=commit_hash):
-                                with patch("src.orchestration.job_runner._server_step") as mock_server:
-                                    mock_server.return_value = (None, MagicMock())
-                                    with patch("src.orchestration.job_runner.test_single_version", return_value=_make_test_result("3.10")) as mock_test:
-                                        with patch("src.orchestration.job_runner.empty_directory"):
-                                            with patch("src.orchestration.job_runner.os.makedirs"):
-                                                with patch("src.orchestration.job_runner.VirtualInputController") as mock_vim:
-                                                    mock_vim.return_value.close = MagicMock()
-                                                    job_runner.run_job("job0000000000000000")
+                    mock_repo = MagicMock()
+                    mock_repo.clone.return_value = "/repos/Quozul/PicoLimbo"
+                    mock_repo.resolve.return_value = commit_hash
+                    with patch.object(job_runner.engine, "_get_git_repo", return_value=mock_repo):
+                        with patch("src.orchestration.job_runner._server_step") as mock_server:
+                            mock_server.return_value = (None, MagicMock())
+                            with patch("src.orchestration.job_runner.test_single_version", return_value=_make_test_result("3.10")) as mock_test:
+                                with patch("src.orchestration.job_runner.empty_directory"):
+                                    with patch("src.orchestration.job_runner.os.makedirs"):
+                                        with patch("src.orchestration.job_runner.VirtualInputController") as mock_vim:
+                                            mock_vim.return_value.close = MagicMock()
+                                            job_runner.run_job("job0000000000000000")
 
         # Server should have been started
         mock_server.assert_called_once()
@@ -671,16 +677,17 @@ class TestRunJobServerStarted:
         with patch.object(job_runner.database, "get_job_by_id", return_value=job):
             with patch.object(job_runner.database, "update_job", side_effect=track_update):
                 with patch.object(job_runner.engine, "BUILDS_DIR", mock_artifact_dir):
-                    with patch("src.orchestration.job_runner.engine.ensure_repo_cloned", return_value="/repos/Quozul/PicoLimbo"):
-                        with patch("src.orchestration.job_runner.engine.update_repo"):
-                            with patch("src.orchestration.job_runner.engine.resolve_commit", return_value=commit_hash):
-                                with patch("src.orchestration.job_runner._server_step", return_value=(None, MagicMock())):
-                                    with patch("src.orchestration.job_runner.test_single_version", return_value=_make_test_result("3.10")):
-                                        with patch("src.orchestration.job_runner.empty_directory"):
-                                            with patch("src.orchestration.job_runner.os.makedirs"):
-                                                with patch("src.orchestration.job_runner.VirtualInputController") as mock_vim:
-                                                    mock_vim.return_value.close = MagicMock()
-                                                    job_runner.run_job("job0000000000000000")
+                    mock_repo = MagicMock()
+                    mock_repo.clone.return_value = "/repos/Quozul/PicoLimbo"
+                    mock_repo.resolve.return_value = commit_hash
+                    with patch.object(job_runner.engine, "_get_git_repo", return_value=mock_repo):
+                        with patch("src.orchestration.job_runner._server_step", return_value=(None, MagicMock())):
+                            with patch("src.orchestration.job_runner.test_single_version", return_value=_make_test_result("3.10")):
+                                with patch("src.orchestration.job_runner.empty_directory"):
+                                    with patch("src.orchestration.job_runner.os.makedirs"):
+                                        with patch("src.orchestration.job_runner.VirtualInputController") as mock_vim:
+                                            mock_vim.return_value.close = MagicMock()
+                                            job_runner.run_job("job0000000000000000")
 
         assert final_status == "finished"
 
@@ -713,16 +720,17 @@ class TestRunJobServerStarted:
         with patch.object(job_runner.database, "get_job_by_id", return_value=job):
             with patch.object(job_runner.database, "update_job", side_effect=track_update):
                 with patch.object(job_runner.engine, "BUILDS_DIR", mock_artifact_dir):
-                    with patch("src.orchestration.job_runner.engine.ensure_repo_cloned", return_value="/repos/Quozul/PicoLimbo"):
-                        with patch("src.orchestration.job_runner.engine.update_repo"):
-                            with patch("src.orchestration.job_runner.engine.resolve_commit", return_value=commit_hash):
-                                with patch("src.orchestration.job_runner._server_step", return_value=(None, MagicMock())):
-                                    with patch("src.orchestration.job_runner.test_single_version", side_effect=side_effect):
-                                        with patch("src.orchestration.job_runner.empty_directory"):
-                                            with patch("src.orchestration.job_runner.os.makedirs"):
-                                                with patch("src.orchestration.job_runner.VirtualInputController") as mock_vim:
-                                                    mock_vim.return_value.close = MagicMock()
-                                                    job_runner.run_job("job0000000000000000")
+                    mock_repo = MagicMock()
+                    mock_repo.clone.return_value = "/repos/Quozul/PicoLimbo"
+                    mock_repo.resolve.return_value = commit_hash
+                    with patch.object(job_runner.engine, "_get_git_repo", return_value=mock_repo):
+                        with patch("src.orchestration.job_runner._server_step", return_value=(None, MagicMock())):
+                            with patch("src.orchestration.job_runner.test_single_version", side_effect=side_effect):
+                                with patch("src.orchestration.job_runner.empty_directory"):
+                                    with patch("src.orchestration.job_runner.os.makedirs"):
+                                        with patch("src.orchestration.job_runner.VirtualInputController") as mock_vim:
+                                            mock_vim.return_value.close = MagicMock()
+                                            job_runner.run_job("job0000000000000000")
 
         assert captured_test_results is not None
         assert set(captured_test_results.keys()) == {"3.10", "3.11"}

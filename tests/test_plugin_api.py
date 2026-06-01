@@ -3,7 +3,7 @@
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -397,41 +397,45 @@ class TestEnginePluginParameter:
     def test_create_job_passes_plugins_to_database(self):
         """engine.create_job should forward the plugins parameter."""
         from src.builder import engine
-        from unittest.mock import patch
+        from unittest.mock import patch, MagicMock, Mock
 
         mock_job = {"job_id": "test123", "status": "queued"}
+        mock_git = Mock()
+        mock_git.clone.return_value = Path("/tmp/repo")
+        mock_git.resolve.return_value = "a" * 40
 
         with patch.object(engine, "extract_owner_from_url", return_value=("Quozul", "PicoLimbo")):
-            with patch.object(engine, "ensure_repo_cloned"):
-                with patch.object(engine, "resolve_commit", return_value="a" * 40):
-                    with patch.object(engine.database, "create_job", return_value=mock_job) as mock_db:
-                        engine.create_job(
-                            repo_url="https://github.com/Quozul/PicoLimbo.git",
-                            ref="main",
-                            proxy="velocity",
-                            plugins=["my-plugin.jar"],
-                        )
-                        mock_db.assert_called_once_with(
-                            "https://github.com/Quozul/PicoLimbo.git",
-                            "main", "Quozul", "a" * 40,
-                            [], "velocity", "modern", None, ["my-plugin.jar"], 30,
-                        )
+            with patch.object(engine, "_get_git_repo", return_value=mock_git):
+                with patch.object(engine.database, "create_job", return_value=mock_job) as mock_db:
+                    engine.create_job(
+                        repo_url="https://github.com/Quozul/PicoLimbo.git",
+                        ref="main",
+                        proxy="velocity",
+                        plugins=["my-plugin.jar"],
+                    )
+                    mock_db.assert_called_once_with(
+                        "https://github.com/Quozul/PicoLimbo.git",
+                        "main", "Quozul", "a" * 40,
+                        [], "velocity", "modern", None, ["my-plugin.jar"], 30,
+                    )
 
     def test_create_job_without_plugins(self):
         """engine.create_job without plugins should pass None for both."""
         from src.builder import engine
-        from unittest.mock import patch
+        from unittest.mock import patch, Mock
 
         mock_job = {"job_id": "test123", "status": "queued"}
+        mock_git = Mock()
+        mock_git.clone.return_value = Path("/tmp/repo")
+        mock_git.resolve.return_value = "a" * 40
 
         with patch.object(engine, "extract_owner_from_url", return_value=("Quozul", "PicoLimbo")):
-            with patch.object(engine, "ensure_repo_cloned"):
-                with patch.object(engine, "resolve_commit", return_value="a" * 40):
-                    with patch.object(engine.database, "create_job", return_value=mock_job) as mock_db:
-                        engine.create_job(
-                            repo_url="https://github.com/Quozul/PicoLimbo.git",
-                            ref="main",
-                        )
-                        args = mock_db.call_args[0]
-                        assert args[7] is None  # plugin (legacy)
-                        assert args[8] is None  # plugins
+            with patch.object(engine, "_get_git_repo", return_value=mock_git):
+                with patch.object(engine.database, "create_job", return_value=mock_job) as mock_db:
+                    engine.create_job(
+                        repo_url="https://github.com/Quozul/PicoLimbo.git",
+                        ref="main",
+                    )
+                    args = mock_db.call_args[0]
+                    assert args[7] is None  # plugin (legacy)
+                    assert args[8] is None  # plugins

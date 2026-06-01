@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from src.infrastructure.artifact_repository import ArtifactRepository
 from src.proxy import ProxyType, get_proxy_manager
 from src.proxy.base import ProxyManager
 from src.proxy.velocity import VelocityProxyManager
@@ -75,6 +76,7 @@ class TestGetProxyManager:
         """VelocityProxyManager should create its cache directory."""
         mgr = VelocityProxyManager(cache_dir=tmp_path / "test_cache")
         assert mgr._cache_dir == tmp_path / "test_cache"
+        assert isinstance(mgr._artifact_repo, ArtifactRepository)
 
     def test_bungeecord_returns_none(self):
         """BungeeCord is a placeholder — returns None."""
@@ -116,62 +118,42 @@ class TestVelocityProxyManagerDownload:
         }
         (temp_cache_dir / "metadata.json").write_text(json.dumps(metadata))
 
-        # Mock _get_latest_mc_version so we don't trigger real API calls.
-        # The code calls it to check staleness, but when versions match,
-        # the jar is returned without downloading.
-        with patch.object(
-            manager, "_get_latest_mc_version", return_value="1.21.8"
-        ):
-            result = manager.download_if_needed()
+        # Mock the artifact_repo so we don't trigger real API calls.
+        mock_repo = MagicMock()
+        mock_repo.get_latest_mc_version.return_value = "1.21.8"
+        manager._artifact_repo = mock_repo
 
-            assert result == cached_jar
+        result = manager.download_if_needed()
+
+        assert result == cached_jar
 
     # --- test_download_if_needed_fetches_new_version ---
 
     def test_download_if_needed_fetches_new_version(self, manager, temp_cache_dir):
         """When no cache exists, latest version is downloaded from PaperMC API."""
-        with patch("src.proxy.velocity.httpx.get") as mock_get:
-            mock_get.side_effect = [
-                # GET /versions → latest MC version (v3 format)
-                MagicMock(
-                    status_code=200,
-                    json=lambda: {
-                        "versions": [
-                            {"version": {"id": "1.21.8"}, "builds": [100]}
-                        ]
-                    },
-                ),
-                # GET /versions/{mc}/builds → stable build info (v3 format)
-                MagicMock(
-                    status_code=200,
-                    json=lambda: [
-                        {
-                            "id": 343,
-                            "channel": "STABLE",
-                            "downloads": {
-                                "server:default": {
-                                    "url": "https://cdn.example.com/velocity.jar"
-                                }
-                            },
-                        }
-                    ],
-                ),
-                # GET download URL → jar content
-                MagicMock(status_code=200, content=b"fake-jar-content"),
-            ]
+        mock_repo = MagicMock()
+        mock_repo.get_latest_mc_version.return_value = "1.21.8"
+        mock_repo.get_download_url.return_value = (
+            "https://cdn.example.com/velocity.jar"
+        )
+        mock_repo.download.return_value = temp_cache_dir / "velocity-1.21.8.jar"
+        manager._artifact_repo = mock_repo
 
-            result = manager.download_if_needed()
+        result = manager.download_if_needed()
 
-            assert result == temp_cache_dir / "velocity-1.21.8.jar"
-            assert result.read_bytes() == b"fake-jar-content"
+        assert result == temp_cache_dir / "velocity-1.21.8.jar"
+        mock_repo.download.assert_called_once_with(
+            "https://cdn.example.com/velocity.jar",
+            temp_cache_dir / "velocity-1.21.8.jar",
+        )
 
-            # Verify metadata was saved
-            metadata = json.loads(
-                (temp_cache_dir / "metadata.json").read_text()
-            )
-            assert metadata["minecraft_version"] == "1.21.8"
-            assert metadata["version"] == "1.21.8"
-            assert "downloaded_at" in metadata
+        # Verify metadata was saved
+        metadata = json.loads(
+            (temp_cache_dir / "metadata.json").read_text()
+        )
+        assert metadata["minecraft_version"] == "1.21.8"
+        assert metadata["version"] == "1.21.8"
+        assert "downloaded_at" in metadata
 
     def test_download_if_needed_replaces_stale_cache(self, manager, temp_cache_dir):
         """Stale cached version (different from latest) triggers a download."""
@@ -184,58 +166,31 @@ class TestVelocityProxyManagerDownload:
         }
         (temp_cache_dir / "metadata.json").write_text(json.dumps(metadata))
 
-        with patch("src.proxy.velocity.httpx.get") as mock_get:
-            mock_get.side_effect = [
-                # Latest MC version changed from 1.20.4 → 1.21.8 (v3 format)
-                MagicMock(
-                    status_code=200,
-                    json=lambda: {
-                        "versions": [
-                            {"version": {"id": "1.21.8"}, "builds": [100]}
-                        ]
-                    },
-                ),
-                MagicMock(
-                    status_code=200,
-                    json=lambda: [
-                        {
-                            "id": 343,
-                            "channel": "STABLE",
-                            "downloads": {
-                                "server:default": {
-                                    "url": "https://cdn.example.com/velocity.jar"
-                                }
-                            },
-                        }
-                    ],
-                ),
-                MagicMock(status_code=200, content=b"new-jar-content"),
-            ]
+        mock_repo = MagicMock()
+        mock_repo.get_latest_mc_version.return_value = "1.21.8"
+        mock_repo.get_download_url.return_value = (
+            "https://cdn.example.com/velocity.jar"
+        )
+        mock_repo.download.return_value = temp_cache_dir / "velocity-1.21.8.jar"
+        manager._artifact_repo = mock_repo
 
-            result = manager.download_if_needed()
+        result = manager.download_if_needed()
 
-            assert result == temp_cache_dir / "velocity-1.21.8.jar"
-            assert result.read_bytes() == b"new-jar-content"
+        assert result == temp_cache_dir / "velocity-1.21.8.jar"
+        mock_repo.download.assert_called_once_with(
+            "https://cdn.example.com/velocity.jar",
+            temp_cache_dir / "velocity-1.21.8.jar",
+        )
 
     def test_download_no_stable_build_raises(self, manager, temp_cache_dir):
         """When no stable builds exist, RuntimeError is raised."""
-        with patch("src.proxy.velocity.httpx.get") as mock_get:
-            mock_get.side_effect = [
-                # GET /versions → latest MC version (v3 format)
-                MagicMock(
-                    status_code=200,
-                    json=lambda: {
-                        "versions": [
-                            {"version": {"id": "1.21.8"}, "builds": [100]}
-                        ]
-                    },
-                ),
-                # GET /versions/{mc}/builds → no builds (v3 format: empty list)
-                MagicMock(status_code=200, json=lambda: []),
-            ]
+        mock_repo = MagicMock()
+        mock_repo.get_latest_mc_version.return_value = "1.21.8"
+        mock_repo.get_download_url.return_value = None
+        manager._artifact_repo = mock_repo
 
-            with pytest.raises(RuntimeError, match="No stable Velocity build"):
-                manager.download_if_needed()
+        with pytest.raises(RuntimeError, match="No stable Velocity build"):
+            manager.download_if_needed()
 
 
 # ============================================================================

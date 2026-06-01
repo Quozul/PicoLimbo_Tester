@@ -100,11 +100,9 @@ def _build_step(job: dict) -> tuple[bool, str]:
     ref = job["ref"]
     commit_hash = job["commit_hash"]
 
-    repo_path = engine.ensure_repo_cloned(owner, repo_name)
-    # Update repo if already cloned (fetch latest)
-    engine.update_repo(repo_path, ref)
+    repo_path = engine._get_git_repo().clone(owner, repo_name)
     # Re-resolve commit in case it changed (branch moved)
-    commit_hash = engine.resolve_commit(repo_path, ref)
+    commit_hash = engine._get_git_repo().resolve(repo_path, ref)
     database.update_job(job_id, commit_hash=commit_hash)
 
     # Check if artifact already exists for this commit hash
