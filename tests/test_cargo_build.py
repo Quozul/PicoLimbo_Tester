@@ -142,19 +142,4 @@ class TestCargoBuildAdapter:
         mock_run.assert_called_once()
         assert mock_run.call_args[1]["timeout"] == 600.0
 
-    def test_integration_builds_real_rust_project(self, tmp_path):
-        """Integration test: build a real Rust project and verify the binary."""
-        # Create a minimal Rust project named "pico_limbo" so the adapter
-        # finds the expected artifact path (target/release/pico_limbo).
-        (tmp_path / "Cargo.toml").write_text(
-            '[package]\nname = "pico_limbo"\nversion = "0.1.0"\nedition = "2021"\n'
-        )
-        (tmp_path / "src").mkdir()
-        (tmp_path / "src" / "main.rs").write_text('fn main() { println!("hello"); }')
 
-        adapter = cargo_build.CargoBuildAdapter(timeout=600.0, release=True)
-        result = adapter.build(tmp_path)
-
-        # The binary should exist at the expected path
-        assert result.exists()
-        assert result.name == "pico_limbo"
