@@ -42,12 +42,57 @@ _OPTION_DEFINITIONS: list[tuple[str, str, tuple[int, ...]]] = [
 class ServerEntry:
     """A single server entry for servers.dat."""
 
-    __slots__ = ("ip", "name", "hidden")
+    __slots__ = ("_address", "_ip", "_name", "_hidden")
 
-    def __init__(self, ip: str, name: str = "Minecraft Server", hidden: bool = False) -> None:
-        self.ip = ip
-        self.name = name
-        self.hidden = hidden
+    def __init__(
+        self,
+        ip: str | None = None,
+        name: str = "Minecraft Server",
+        hidden: bool = False,
+        address: str | None = None,
+    ) -> None:
+        """Create a server entry.
+
+        Args:
+            ip: Server IP address (optional if *address* is provided).
+            name: Server display name.
+            hidden: Whether the server is hidden.
+            address: Full address string (e.g. ``"127.0.0.1:25565"``).
+                     If provided, *ip* is derived from it.
+        """
+        self._name = name
+        self._hidden = hidden
+
+        if address is not None:
+            self._address = address
+            # Parse IP from address (strip port if present)
+            if ":" in address:
+                self._ip = address.rsplit(":", 1)[0]
+            else:
+                self._ip = address
+        else:
+            self._address = ip or ""
+            self._ip = ip or ""
+
+    @property
+    def ip(self) -> str:
+        """Server IP address."""
+        return self._ip
+
+    @property
+    def name(self) -> str:
+        """Server display name."""
+        return self._name
+
+    @property
+    def hidden(self) -> bool:
+        """Whether the server is hidden."""
+        return self._hidden
+
+    @property
+    def address(self) -> str:
+        """Full address string."""
+        return self._address
 
     @classmethod
     def from_tuple(cls, data: tuple[str, str, bool]) -> ServerEntry:
@@ -58,7 +103,7 @@ class ServerEntry:
     def from_dict(cls, data: dict[str, Any]) -> ServerEntry:
         """Create from a dict with ip/name/hidden keys."""
         return cls(
-            ip=data["ip"],
+            ip=data.get("ip"),
             name=data.get("name", "Minecraft Server"),
             hidden=data.get("hidden", False),
         )

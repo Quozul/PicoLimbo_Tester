@@ -131,6 +131,18 @@ class Job:
             "updated_at": self.updated_at.isoformat(),
         }
 
+    @property
+    def owner(self) -> str:
+        """Extract owner from repo_url."""
+        return self._extract_owner()
+
+    @property
+    def mc_version(self) -> Version:
+        """Get the Minecraft version from the first version in the list."""
+        if self.versions:
+            return self.versions[0]
+        raise ValueError("Job has no versions")
+
     def _extract_owner(self) -> str:
         """Extract owner from repo_url using the engine's parser."""
         owner, _ = self.repo_url.parse(self.repo_url.value)

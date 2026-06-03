@@ -12,12 +12,18 @@ from typing import Any, Optional
 
 from .. import database
 from .. import config
+from ..application.server_context import ServerContext
+from ..application.server_setup_service import ServerSetupService
 from ..builder import engine
+from ..domain.job import Job
+from ..infrastructure.artifact_repository import ArtifactRepository
 from ..infrastructure.artifact_storage import ArtifactStorage
+from ..infrastructure.config_writer import ConfigWriter
 from ..minecraft.env import create_servers_dat
 from ..minecraft.input import VirtualInputController
 from ..minecraft.runner import test_single_version, empty_directory
 from ..proxy import get_proxy_manager
+from ..proxy.factory import ProxyFactory
 from ..proxy.velocity import VelocityProxyManager
 
 logger = logging.getLogger(__name__)
@@ -37,6 +43,36 @@ SECONDS_PER_VERSION = config.SECONDS_PER_VERSION
 # Paths
 GAME_DIRECTORY = config.GAME_DIRECTORY
 SCREENSHOTS_DIR = config.SCREENSHOTS_DIR
+
+# Map Velocity forwarding methods to PicoLimbo forwarding methods
+_VELOCITY_TO_PICOLIMBO_METHOD = {
+    "none": "NONE",
+    "legacy": "LEGACY",
+    "bungeeguard": "BUNGEE_GUARD",
+    "modern": "MODERN",
+}
+
+
+_DEFAULT_FORWARDING_SECRET = config._FORWARDING_SECRET
+
+
+def _generate_pico_limbo_config(proxy_type: str, forwarding_method: str = "modern") -> str:
+    """Generate PicoLimbo server.toml content.
+
+    For proxy mode, includes the [forwarding] section with the appropriate method.
+    """
+    if proxy_type and proxy_type != "none":
+        lines = [f'bind = "127.0.0.1:{PICO_LIMBO_INTERNAL_PORT}"']
+        method = _VELOCITY_TO_PICOLIMBO_METHOD.get(forwarding_method, "MODERN")
+        lines.append(f'\n[forwarding]')
+        lines.append(f'method = "{method}"')
+        if forwarding_method == "bungeeguard":
+            lines.append(f'tokens = ["{_DEFAULT_FORWARDING_SECRET}"]')
+        else:
+            lines.append(f'secret = "{_DEFAULT_FORWARDING_SECRET}"')
+        return "\n".join(lines)
+    else:
+        return SERVER_CONFIG_CONTENT
 
 
 def _now_iso() -> str:
@@ -118,35 +154,48 @@ def _build_step(job: dict) -> tuple[bool, str]:
     return False, str(result.artifact_path.value)
 
 
-# Map Velocity forwarding methods to PicoLimbo forwarding methods
-_VELOCITY_TO_PICOLIMBO_METHOD = {
-    "none": "NONE",
-    "legacy": "LEGACY",
-    "bungeeguard": "BUNGEE_GUARD",
-    "modern": "MODERN",
-}
+def _dict_to_job(job_dict: dict) -> Job:
+    """Convert a database dict to a Job domain object."""
+    return Job.from_dict(job_dict)
 
 
-_DEFAULT_FORWARDING_SECRET = config._FORWARDING_SECRET
+def _job_to_dict(job: Job) -> dict:
+    """Convert a Job domain object to a database dict."""
+    return job.to_dict()
 
 
-def _generate_pico_limbo_config(proxy_type: str, forwarding_method: str = "modern") -> str:
-    """Generate PicoLimbo server.toml content.
+def _create_server_context(
+    job: Job,
+    builds_dir: Path,
+) -> ServerContext:
+    """Create a ServerContext using ServerSetupService.
 
-    For proxy mode, includes the [forwarding] section with the appropriate method.
+    Parameters
+    ----------
+    job : Job
+        The job being executed.
+    builds_dir : Path
+        Directory containing build artifacts.
+
+    Returns
+    -------
+    ServerContext
+        Context manager for the running servers.
     """
-    if proxy_type and proxy_type != "none":
-        lines = [f'bind = "127.0.0.1:{PICO_LIMBO_INTERNAL_PORT}"']
-        method = _VELOCITY_TO_PICOLIMBO_METHOD.get(forwarding_method, "MODERN")
-        lines.append(f'\n[forwarding]')
-        lines.append(f'method = "{method}"')
-        if forwarding_method == "bungeeguard":
-            lines.append(f'tokens = ["{_DEFAULT_FORWARDING_SECRET}"]')
-        else:
-            lines.append(f'secret = "{_DEFAULT_FORWARDING_SECRET}"')
-        return "\n".join(lines)
-    else:
-        return SERVER_CONFIG_CONTENT
+    proxy_factory = ProxyFactory(ConfigWriter())
+    config_writer = ConfigWriter()
+    artifact_repo = ArtifactRepository(
+        api_base=config.VELOCITY_API_BASE,
+        cache_dir=config.PROXY_CACHE_DIR / "velocity",
+    )
+
+    service = ServerSetupService(proxy_factory, config_writer, artifact_repo)
+
+    proxy_dir = Path(tempfile.mkdtemp(prefix="velocity_config_"))
+    plugins_dir = config.PLUGINS_DIR
+    webui_dir = Path("/tmp")  # Placeholder for web UI directory
+
+    return service.setup(job, builds_dir, proxy_dir, plugins_dir, webui_dir)
 
 
 def _server_step(

@@ -3,9 +3,11 @@
 from enum import Enum
 
 from .base import ProxyManager
+from .factory import ProxyFactory
 from .velocity import VelocityProxyManager
 
 __all__ = [
+    "ProxyFactory",
     "ProxyType",
     "ProxyManager",
     "VelocityProxyManager",

@@ -110,17 +110,25 @@ class VelocityProxyManager(ProxyManager):
         logger.info("Downloaded Velocity jar: %s", jar_path)
         return jar_path
 
-    _FORWARDING_SECRET = config._FORWARDING_SECRET
-
-    def start(self, config_dir: Path, pico_limbo_port: int, forwarding_method: str = "modern", plugin: str | None = None, plugins: list[str] | None = None) -> Popen:
+    def start(
+        self,
+        config_dir: Path,
+        pico_limbo_port: int,
+        jar_path: Path,
+        forwarding_secret: str,
+        plugins: list[str] | None = None,
+        forwarding_method: str = "modern",
+    ) -> Popen:
         """Start the Velocity proxy process.
 
         Args:
             config_dir: Directory where velocity.toml will be written.
             pico_limbo_port: Port that PicoLimbo is running on.
-            forwarding_method: Player info forwarding mode (none, legacy, bungeeguard, modern).
-            plugin: Single plugin name (legacy, deprecated, use plugins instead).
+            jar_path: Path to the Velocity jar file.
+            forwarding_secret: Forwarding secret for player-info forwarding.
             plugins: List of plugin names to copy into plugins folder.
+            forwarding_method: Player info forwarding mode
+                (none, legacy, bungeeguard, modern).
 
         Returns:
             The running Velocity process.
@@ -133,13 +141,12 @@ class VelocityProxyManager(ProxyManager):
 
         # Write forwarding secret file
         secret_path = config_dir / "forwarding.secret"
-        secret_path.write_text(self._FORWARDING_SECRET)
+        secret_path.write_text(forwarding_secret)
         logger.info("Wrote Velocity forwarding secret to %s", secret_path)
 
         # Copy plugins
-        self._copy_plugins(config_dir, plugin, plugins)
+        self._copy_plugins(config_dir, plugins)
 
-        jar_path = self.download_if_needed()
         logger.info(
             "Starting Velocity from %s with config %s",
             jar_path,
@@ -177,30 +184,22 @@ class VelocityProxyManager(ProxyManager):
                 except subprocess.TimeoutExpired:
                     logger.error("Velocity failed to be killed")
 
-    def _copy_plugins(self, config_dir: Path, plugin: str | None = None, plugins: list[str] | None = None) -> None:
+    def _copy_plugins(self, config_dir: Path, plugins: list[str] | None = None) -> None:
         """Copy plugin .jar files into the proxy's plugins directory.
 
         Args:
             config_dir: Directory where velocity.toml is written (parent of plugins/).
-            plugin: Single plugin name (legacy, deprecated, use plugins instead).
             plugins: List of plugin names to copy.
         """
+        if not plugins:
+            return
+
         plugins_dir = config_dir / "plugins"
         plugins_dir.mkdir(exist_ok=True)
 
-        # Resolve the list of plugins to copy
-        to_copy: list[str] = []
-        if plugin:
-            to_copy.append(plugin)
-        if plugins:
-            to_copy.extend(plugins)
-
-        if not to_copy:
-            return
-
         import shutil
 
-        for plugin_name in to_copy:
+        for plugin_name in plugins:
             source = PLUGINS_DIR / plugin_name
             dest = plugins_dir / plugin_name
             if source.exists():
