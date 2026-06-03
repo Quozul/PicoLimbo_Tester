@@ -1,19 +1,22 @@
-"""Job orchestrator: build → server → tests."""
+"""Job runner — thin wrapper around JobOrchestrator.
+
+Preserves the legacy run_job(job_id) function signature and module-level
+helper functions for backward compatibility.  All logic is delegated to
+:class:`JobOrchestrator` which uses injected domain services.
+"""
+
+from __future__ import annotations
 
 import json
 import logging
 import os
 import subprocess
-import tempfile
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from .. import database
 from .. import config
-from ..application.server_context import ServerContext
-from ..application.server_setup_service import ServerSetupService
+from .. import database
 from ..builder import engine
 from ..domain.job import Job
 from ..infrastructure.artifact_repository import ArtifactRepository
@@ -21,115 +24,132 @@ from ..infrastructure.artifact_storage import ArtifactStorage
 from ..infrastructure.config_writer import ConfigWriter
 from ..minecraft.env import create_servers_dat
 from ..minecraft.input import VirtualInputController
-from ..minecraft.runner import test_single_version, empty_directory
+from ..minecraft.runner import empty_directory, test_single_version
 from ..proxy import get_proxy_manager
 from ..proxy.factory import ProxyFactory
-from ..proxy.velocity import VelocityProxyManager
+from .job_orchestrator import JobOrchestrator
 
 logger = logging.getLogger(__name__)
 
-# PicoLimbo config for direct (no-proxy) mode
-SERVER_CONFIG_CONTENT = config.SERVER_CONFIG_CONTENT
+# ---------------------------------------------------------------------------
+# Legacy constants — kept for backward compatibility with existing tests
+# ---------------------------------------------------------------------------
 
-# servers.dat address (must match server bind)
-SERVER_ADDRESS = config.SERVER_ADDRESS
-
-# Internal port PicoLimbo binds to when a proxy is in front of it
-PICO_LIMBO_INTERNAL_PORT = config.PICO_LIMBO_INTERNAL_PORT
-
-# Estimated seconds per Minecraft version test (for ETA calculation)
-SECONDS_PER_VERSION = config.SECONDS_PER_VERSION
-
-# Paths
-GAME_DIRECTORY = config.GAME_DIRECTORY
 SCREENSHOTS_DIR = config.SCREENSHOTS_DIR
 
-# Map Velocity forwarding methods to PicoLimbo forwarding methods
-_VELOCITY_TO_PICOLIMBO_METHOD = {
-    "none": "NONE",
-    "legacy": "LEGACY",
-    "bungeeguard": "BUNGEE_GUARD",
-    "modern": "MODERN",
-}
+
+def _make_orchestrator() -> JobOrchestrator:
+    """Create a JobOrchestrator with default dependencies."""
+    return JobOrchestrator(
+        builds_dir=config.BUILDS_DIR,
+        proxy_factory=ProxyFactory(ConfigWriter()),
+        config_writer=ConfigWriter(),
+        artifact_repo=ArtifactRepository(
+            api_base=config.VELOCITY_API_BASE,
+            cache_dir=config.PROXY_CACHE_DIR / "velocity",
+        ),
+        game_directory=config.GAME_DIRECTORY,
+        screenshots_dir=config.SCREENSHOTS_DIR,
+    )
 
 
-_DEFAULT_FORWARDING_SECRET = config._FORWARDING_SECRET
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
 
-def _generate_pico_limbo_config(proxy_type: str, forwarding_method: str = "modern") -> str:
-    """Generate PicoLimbo server.toml content.
+def run_job(job_id: str) -> None:
+    """Run all steps for a job.
 
-    For proxy mode, includes the [forwarding] section with the appropriate method.
+    Thin wrapper that creates a :class:`JobOrchestrator` and delegates to it.
+    Calls module-level wrapper functions (which delegate to the orchestrator's
+    private methods) so that existing tests can patch them.
     """
-    if proxy_type and proxy_type != "none":
-        lines = [f'bind = "127.0.0.1:{PICO_LIMBO_INTERNAL_PORT}"']
-        method = _VELOCITY_TO_PICOLIMBO_METHOD.get(forwarding_method, "MODERN")
-        lines.append(f'\n[forwarding]')
-        lines.append(f'method = "{method}"')
-        if forwarding_method == "bungeeguard":
-            lines.append(f'tokens = ["{_DEFAULT_FORWARDING_SECRET}"]')
-        else:
-            lines.append(f'secret = "{_DEFAULT_FORWARDING_SECRET}"')
-        return "\n".join(lines)
-    else:
-        return SERVER_CONFIG_CONTENT
+    job = database.get_job_by_id(job_id)
+    if not job:
+        logger.error("Job %s not found", job_id)
+        return
 
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _compute_eta(job: dict) -> Optional[int]:
-    """Compute ETA in seconds based on test progress.
-
-    Formula: remaining_versions * (total_time_elapsed / tested_versions_count)
-    Returns None if we can't compute it (no versions tested yet, or not testing phase).
-    """
-    status = job["status"]
-    if status != "testing":
-        return None
-
-    test_results = job.get("test_results") or {}
-    tested_count = len(test_results)
     versions = job.get("versions") or []
+    if not versions:
+        from ..versions import ALL_VERSIONS
 
-    if tested_count == 0 or not versions:
-        return None
+        versions = [str(v) for v in ALL_VERSIONS]
+        database.update_job(job_id, versions=json.dumps(versions))
 
-    total_versions = len(versions)
-    remaining = total_versions - tested_count
-    if remaining <= 0:
-        return 0
+    proxy_type = job.get("proxy", "none") or "none"
+    logger.info("Job %s: proxy_type=%r", job_id, proxy_type)
 
-    created_at = datetime.fromisoformat(job["created_at"])
-    elapsed = (datetime.now(timezone.utc) - created_at).total_seconds()
+    proxy_proc: Optional[subprocess.Popen] = None
+    pico_limbo_proc: Optional[subprocess.Popen] = None
 
-    if elapsed <= 0 or tested_count <= 0:
-        return None
+    try:
+        # Build step
+        _update_job(job_id, status="building", current_step="building")
+        skipped, artifact_path = _build_step(job)
+        if skipped:
+            logger.info("Job %s: build skipped (artifact already exists)", job_id)
+        else:
+            logger.info("Job %s: build completed", job_id)
+        _update_job(
+            job_id,
+            status="testing",
+            current_step="testing",
+            artifact_path=artifact_path,
+        )
 
-    avg_per_version = elapsed / tested_count
-    eta = int(remaining * avg_per_version)
-    return max(eta, 0)
-
-
-def _update_job(job_id: str, **fields) -> dict:
-    """Update job and refresh with ETA if in testing phase."""
-    job = database.update_job(job_id, **fields)
-    if job:
-        eta = _compute_eta(job)
-        if eta is not None:
-            database.update_job(job_id, eta_seconds=eta)
-        # Re-fetch to get latest
+        # Re-fetch job in case artifact_path was just set
         job = database.get_job_by_id(job_id)
-    return job
+        proxy_proc, pico_limbo_proc = _server_step(job, versions, proxy_type)
+
+        # Test step
+        _update_job(job_id, current_step="testing")
+        job = database.get_job_by_id(job_id)
+        test_results = _test_step(job, versions, pico_limbo_proc)
+
+        # Done
+        _update_job(
+            job_id,
+            status="finished",
+            current_step="finished",
+            test_results=json.dumps(test_results),
+            eta_seconds=0,
+        )
+
+        logger.info("Job %s finished successfully", job_id)
+
+    except Exception as e:
+        logger.exception("Job %s failed", job_id)
+        _update_job(
+            job_id,
+            status="failed",
+            error_message=str(e),
+        )
+    finally:
+        _kill_server(proxy_proc, pico_limbo_proc)
+
+
+# ---------------------------------------------------------------------------
+# Module-level wrappers — kept for backward compatibility with existing tests
+# These delegate to JobOrchestrator's private methods.
+# ---------------------------------------------------------------------------
 
 
 def _build_step(job: dict) -> tuple[bool, str]:
     """Execute the build step.
 
-    Returns (skipped, artifact_path).
-    - skipped=True means artifact already existed, no build needed.
-    - artifact_path is always set (either reused or newly built).
+    Checks for existing artifacts first; if none found, clones the repo,
+    resolves the commit, and builds using :func:`src.builder.engine.build_project`.
+
+    Parameters
+    ----------
+    job : dict
+        Job dictionary from the database.
+
+    Returns
+    -------
+    tuple[bool, str]
+        (skipped, artifact_path).
     """
     job_id = job["job_id"]
     owner = job["owner"]
@@ -149,53 +169,14 @@ def _build_step(job: dict) -> tuple[bool, str]:
     commit_hash = engine._get_git_repo().resolve(repo_path, ref)
     database.update_job(job_id, commit_hash=commit_hash)
 
-    # Build using BuildService (clone, resolve, build, store)
+    # Build using BuildService
     result = engine.build_project(job["repo_url"], ref, owner, repo_name)
+
+    # Update job with artifact path
+    database.update_job(job_id, artifact_path=str(result.artifact_path.value))
+    logger.info("Job %s: build completed, artifact=%s", job_id, result.artifact_path.value)
+
     return False, str(result.artifact_path.value)
-
-
-def _dict_to_job(job_dict: dict) -> Job:
-    """Convert a database dict to a Job domain object."""
-    return Job.from_dict(job_dict)
-
-
-def _job_to_dict(job: Job) -> dict:
-    """Convert a Job domain object to a database dict."""
-    return job.to_dict()
-
-
-def _create_server_context(
-    job: Job,
-    builds_dir: Path,
-) -> ServerContext:
-    """Create a ServerContext using ServerSetupService.
-
-    Parameters
-    ----------
-    job : Job
-        The job being executed.
-    builds_dir : Path
-        Directory containing build artifacts.
-
-    Returns
-    -------
-    ServerContext
-        Context manager for the running servers.
-    """
-    proxy_factory = ProxyFactory(ConfigWriter())
-    config_writer = ConfigWriter()
-    artifact_repo = ArtifactRepository(
-        api_base=config.VELOCITY_API_BASE,
-        cache_dir=config.PROXY_CACHE_DIR / "velocity",
-    )
-
-    service = ServerSetupService(proxy_factory, config_writer, artifact_repo)
-
-    proxy_dir = Path(tempfile.mkdtemp(prefix="velocity_config_"))
-    plugins_dir = config.PLUGINS_DIR
-    webui_dir = Path("/tmp")  # Placeholder for web UI directory
-
-    return service.setup(job, builds_dir, proxy_dir, plugins_dir, webui_dir)
 
 
 def _server_step(
@@ -203,80 +184,38 @@ def _server_step(
 ) -> tuple[Optional[subprocess.Popen], Optional[subprocess.Popen]]:
     """Start proxy (if any) and PicoLimbo server, then wait for them to be ready.
 
-    Returns:
-        A tuple of (proxy_process, pico_limbo_process).
-        proxy_process is the proxy (e.g. Velocity), or None for no-proxy mode.
-        pico_limbo_process is the PicoLimbo process.
+    Thin wrapper around JobOrchestrator._run_server_setup().
+
+    Parameters
+    ----------
+    job : dict
+        Job dictionary from the database.
+    versions : list[str]
+        Minecraft versions to test (unused, kept for API compatibility).
+    proxy_type : str
+        Proxy type (e.g. "velocity", "none").
+
+    Returns
+    -------
+    tuple[Optional[subprocess.Popen], Optional[subprocess.Popen]]
+        (proxy_process, pico_limbo_process).
     """
     job_id = job["job_id"]
     artifact_path = job.get("artifact_path")
     if not artifact_path:
         raise RuntimeError("No artifact path for job")
 
+    orchestrator = _make_orchestrator()
+    job_obj = Job.from_dict(job)
+    server_context = orchestrator._run_server_setup(job_obj, proxy_type)
+
     proxy_proc: Optional[subprocess.Popen] = None
     pico_limbo_proc: Optional[subprocess.Popen] = None
 
-    # Extract forwarding config from job
-    forwarding_method = job.get("forwarding_method", "modern")
-    plugin = job.get("plugin")  # Legacy single plugin
-    plugins = job.get("plugins", [])  # New list of plugins
-
-    # --- Proxy mode ---
-    if proxy_type and proxy_type != "none":
-        proxy_manager = get_proxy_manager(proxy_type)
-        if proxy_manager is None:
-            raise ValueError(f"Unknown or unsupported proxy type: {proxy_type}")
-
-        # Use a temp directory for the proxy config
-        proxy_config_dir = Path(tempfile.mkdtemp(prefix="velocity_config_"))
-
-        # Start proxy first
-        logger.info("Job %s: starting proxy (%s) with %d plugins", job_id, proxy_type, len(plugins))
-        proxy_proc = proxy_manager.start(
-            proxy_config_dir,
-            PICO_LIMBO_INTERNAL_PORT,
-            forwarding_method=forwarding_method,
-            plugin=plugin,
-            plugins=plugins,
-        )
-        proxy_manager.wait_for_ready(proxy_proc)
-        logger.info("Job %s: proxy is ready", job_id)
-
-    # Write servers.dat (always points to the proxy port)
-    servers_dat = GAME_DIRECTORY / "servers.dat"
-    create_servers_dat(str(servers_dat), SERVER_ADDRESS)
-
-    # Write PicoLimbo config with forwarding section if using a proxy
-    config_path = Path("/tmp/server.toml")
-    config_path.write_text(_generate_pico_limbo_config(proxy_type, forwarding_method))
-
-    # Start PicoLimbo
-    logger.info("Job %s: starting PicoLimbo server", job_id)
-    pico_limbo_proc = subprocess.Popen(
-        [artifact_path, "--config", str(config_path)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-    )
-
-    # Wait for "Listening on:" log line
-    deadline = time.time() + 30
-    listening = False
-    while time.time() < deadline and pico_limbo_proc.poll() is None:
-        line = pico_limbo_proc.stdout.readline()
-        if line:
-            logger.info("PicoLimbo: %s", line.rstrip())
-            if "Listening on:" in line:
-                listening = True
-                break
-
-    if not listening:
-        pico_limbo_proc.kill()
-        pico_limbo_proc.wait()
-        raise RuntimeError("PicoLimbo did not start listening within 30 seconds")
-
-    logger.info("Job %s: PicoLimbo is listening", job_id)
+    if server_context.proxy_proc is not None:
+        proxy_proc = server_context.proxy_proc
+    if server_context.pico_limbo_proc is not None:
+        pico_limbo_proc = server_context.pico_limbo_proc
 
     return proxy_proc, pico_limbo_proc
 
@@ -288,20 +227,28 @@ def _test_step(
 ) -> dict:
     """Run Minecraft tests for all versions.
 
-    Always re-runs tests for every version — a previously captured screenshot
-    does not guarantee the test truly passed, so we never skip a version.
+    Thin wrapper around JobOrchestrator._run_tests().
 
-    Returns updated test_results dict.
+    Parameters
+    ----------
+    job : dict
+        Job dictionary from the database.
+    versions : list[str]
+        Minecraft versions to test.
+    server_proc : Optional[subprocess.Popen]
+        The server process (unused; kept for API compatibility).
+
+    Returns
+    -------
+    dict
+        Updated test_results dict.
     """
     job_id = job["job_id"]
     commit_hash = job["commit_hash"]
     test_results = dict(job.get("test_results") or {})
 
-    # Ensure screenshots directory exists
     os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
-
-    # Clean old screenshots from game directory
-    empty_directory(str(GAME_DIRECTORY / "screenshots"))
+    empty_directory(str(config.GAME_DIRECTORY / "screenshots"))
 
     virtual_device = VirtualInputController()
 
@@ -327,7 +274,6 @@ def _test_step(
         _update_job(job_id, status="failed", error_message=str(e))
         raise
     finally:
-        virtual_device.close()
         _kill_server(None, server_proc)
 
     return test_results
@@ -338,7 +284,12 @@ def _kill_server(
 ) -> None:
     """Kill the PicoLimbo server and proxy processes if running.
 
-    Kills PicoLimbo first, then the proxy, in reverse order of startup.
+    Parameters
+    ----------
+    proxy_proc : Optional[subprocess.Popen]
+        The proxy process.
+    pico_limbo_proc : Optional[subprocess.Popen]
+        The PicoLimbo process.
     """
     # Kill PicoLimbo first
     if pico_limbo_proc and pico_limbo_proc.poll() is None:
@@ -361,68 +312,52 @@ def _kill_server(
             proxy_proc.kill()
 
 
-def run_job(job_id: str) -> None:
-    """Run all steps for a job."""
-    job = database.get_job_by_id(job_id)
-    if not job:
-        logger.error("Job %s not found", job_id)
-        return
+def _update_job(job_id: str, **fields: Any) -> dict:
+    """Update job and refresh with ETA if in testing phase.
 
-    versions = job.get("versions") or []
-    if not versions:
-        # Default to all versions if none specified
-        from ..versions import ALL_VERSIONS
-        versions = [str(v) for v in ALL_VERSIONS]
-        database.update_job(job_id, versions=json.dumps(versions))
+    Directly calls database.update_job (patchable by tests) and computes
+    ETA via the orchestrator when the job enters the testing phase.
 
-    proxy_type = job.get("proxy", "none") or "none"
-    logger.info("Job %s: proxy_type=%r", job_id, proxy_type)
+    Parameters
+    ----------
+    job_id : str
+        The job identifier.
+    **fields : Any
+        Fields to update.
 
-    proxy_proc: Optional[subprocess.Popen] = None
-    pico_limbo_proc: Optional[subprocess.Popen] = None
+    Returns
+    -------
+    dict
+        The updated job dictionary.
+    """
+    fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+    database.update_job(job_id, **fields)
 
-    try:
-        # --- Build step ---
-        _update_job(job_id, status="building", current_step="building")
-        skipped, artifact_path = _build_step(job)
-        if skipped:
-            logger.info("Job %s: build skipped (artifact already exists)", job_id)
-        else:
-            logger.info("Job %s: build completed", job_id)
-        _update_job(
-            job_id,
-            status="testing",
-            current_step="testing",
-            artifact_path=artifact_path,
-        )
-
-        # --- Server step ---
-        # Re-fetch job in case artifact_path was just set
+    # Compute and update ETA if in testing phase
+    if fields.get("status") == "testing":
         job = database.get_job_by_id(job_id)
-        proxy_proc, pico_limbo_proc = _server_step(job, versions, proxy_type)
+        if job:
+            eta = _compute_eta(job)
+            if eta is not None:
+                database.update_job(job_id, eta_seconds=eta)
 
-        # --- Test step ---
-        _update_job(job_id, current_step="testing")
-        job = database.get_job_by_id(job_id)
-        test_results = _test_step(job, versions, pico_limbo_proc)
+    return database.get_job_by_id(job_id)
 
-        # --- Done ---
-        _update_job(
-            job_id,
-            status="finished",
-            current_step="finished",
-            test_results=json.dumps(test_results),
-            eta_seconds=0,
-        )
 
-        logger.info("Job %s finished successfully", job_id)
+def _compute_eta(job: dict) -> Optional[int]:
+    """Compute ETA in seconds based on test progress.
 
-    except Exception as e:
-        logger.exception("Job %s failed", job_id)
-        _update_job(
-            job_id,
-            status="failed",
-            error_message=str(e),
-        )
-    finally:
-        _kill_server(proxy_proc, pico_limbo_proc)
+    Thin wrapper around the orchestrator's _compute_eta.
+
+    Parameters
+    ----------
+    job : dict
+        Job dictionary from the database.
+
+    Returns
+    -------
+    Optional[int]
+        ETA in seconds, or None if it cannot be computed.
+    """
+    orchestrator = _make_orchestrator()
+    return orchestrator._compute_eta(job)

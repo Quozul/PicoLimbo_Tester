@@ -444,7 +444,7 @@ class TestJobRunnerProxyIntegration:
         self,
         job_id="job-1",
         status="testing",
-        commit_hash="abc123",
+        commit_hash="abc123def456789012345678901234567890abcd",
         artifact_path="/tmp/pico_limbo",
         versions=None,
         proxy="none",
@@ -456,6 +456,15 @@ class TestJobRunnerProxyIntegration:
             "artifact_path": artifact_path,
             "versions": versions or ["1.21.8"],
             "proxy": proxy,
+            "repo_url": "https://github.com/Quozul/PicoLimbo.git",
+            "ref": "main",
+            "owner": "Quozul",
+            "forwarding_method": "modern",
+            "plugins": [],
+            "login_wait_timeout": 30,
+            "mc_version": "1.21.8",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }
 
     def test_server_step_no_proxy_returns_tuple(self):
@@ -463,38 +472,40 @@ class TestJobRunnerProxyIntegration:
         from src.orchestration import job_runner
 
         mock_job = self._make_job(proxy="none")
-        mock_job["commit_hash"] = "abc123"
+        mock_job["commit_hash"] = "abc123def456789012345678901234567890abcd"
 
         with patch.object(
             job_runner, "_update_job", return_value={}
         ):
+            # Mock ServerSetupService.setup to return a ServerContext
+            mock_pico = MagicMock()
+            mock_pico.poll.return_value = None
+            mock_pico.stdout.readline.return_value = "Listening on: 0.0.0.0:25565\n"
+
+            mock_context = MagicMock()
+            mock_context.proxy_proc = None
+            mock_context.pico_limbo_proc = mock_pico
+
             with patch(
-                "src.orchestration.job_runner.create_servers_dat"
+                "src.orchestration.job_orchestrator.ServerSetupService",
+                return_value=MagicMock(setup=MagicMock(return_value=mock_context)),
             ):
-                    with patch("subprocess.Popen") as mock_popen:
-                        mock_proc = MagicMock()
-                        mock_proc.poll.return_value = None
-                        mock_proc.stdout.readline.return_value = "Listening on: 0.0.0.0:25565\n"
-                        mock_popen.return_value = mock_proc
+                proxy_proc, pico_proc = job_runner._server_step(
+                    mock_job, ["1.21.8"], proxy_type="none"
+                )
 
-                        proxy_proc, pico_proc = job_runner._server_step(
-                            mock_job, ["1.21.8"], proxy_type="none"
-                        )
-
-                        # In direct mode, proxy_proc should be None
-                        assert proxy_proc is None
-                        assert pico_proc is mock_proc
+                # In direct mode, proxy_proc should be None
+                assert proxy_proc is None
+                assert pico_proc is mock_pico
 
     def test_server_step_with_velocity_proxy(self):
         """Proxy mode starts Velocity before PicoLimbo."""
         from src.orchestration import job_runner
 
         mock_job = self._make_job(proxy="velocity")
-        mock_job["commit_hash"] = "abc123"
+        mock_job["commit_hash"] = "abc123def456789012345678901234567890abcd"
 
-        # proxy_manager mock (returned by get_proxy_manager)
-        proxy_manager = MagicMock()
-        # proxy_proc mock (returned by proxy_manager.start())
+        # Mock ServerSetupService.setup to return a ServerContext
         mock_proxy = MagicMock()
         mock_proxy.poll.return_value = None
         mock_proxy.stdout.readline.side_effect = chain(
@@ -503,30 +514,26 @@ class TestJobRunnerProxyIntegration:
         )
         mock_proxy.wait = MagicMock()
         mock_proxy.terminate = MagicMock()
-        proxy_manager.start.return_value = mock_proxy
-        proxy_manager.wait_for_ready = MagicMock()  # no-op
 
         mock_pico = MagicMock()
         mock_pico.poll.return_value = None
         mock_pico.stdout.readline.return_value = "Listening on: 127.0.0.1:30066\n"
 
+        mock_context = MagicMock()
+        mock_context.proxy_proc = mock_proxy
+        mock_context.pico_limbo_proc = mock_pico
+
         with patch(
-            "src.orchestration.job_runner.create_servers_dat"
+            "src.orchestration.job_orchestrator.ServerSetupService",
+            return_value=MagicMock(setup=MagicMock(return_value=mock_context)),
         ):
-            with patch(
-                "src.orchestration.job_runner.get_proxy_manager",
-                return_value=proxy_manager,
-            ):
-                with patch("subprocess.Popen") as mock_popen:
-                        mock_popen.return_value = mock_pico
+            proxy_proc, pico_proc = job_runner._server_step(
+                mock_job, ["1.21.8"], proxy_type="velocity"
+            )
 
-                        proxy_proc, pico_proc = job_runner._server_step(
-                            mock_job, ["1.21.8"], proxy_type="velocity"
-                        )
-
-                        # Both should be non-None
-                        assert proxy_proc is mock_proxy
-                        assert pico_proc is mock_pico
+            # Both should be non-None
+            assert proxy_proc is mock_proxy
+            assert pico_proc is mock_pico
 
     def test_kill_server_kills_both_processes(self):
         """Kill function stops both proxy and pico_limbo processes."""
