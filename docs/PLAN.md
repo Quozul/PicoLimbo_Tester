@@ -797,7 +797,8 @@ def test_update_fetches_and_checkouts(tmp_path):
 
 - **Domain invariants** — Job cannot be in "testing" without an artifact
 - **State machine transitions** — queued → building → testing → finished
-- **ACL adapters with real services** — git clone, PaperMC API, cargo build
+- **ACL adapters with real services** — git clone, PaperMC API
+  - **NOT cargo build**: `CargoBuildAdapter` is a local build step, not an external service. Tests must use `subprocess.run` mocking to verify command construction. Do NOT write integration tests that compile Rust code.
 - **Pure value objects** — CommitHash validation, Version comparison, JobStatus transitions
 - **Error paths** — network failure, build failure, timeout
 
@@ -806,7 +807,7 @@ def test_update_fetches_and_checkouts(tmp_path):
 | Test File | Current Size | Target | Actions |
 |-----------|-------------|--------|---------|
 | `test_job_runner_idempotency.py` | 36.7KB | ~10KB | Remove `_make_path_mock()`, remove mock-call-count tests |
-| `test_engine.py` | 22KB | ~5KB | Replace with `test_build_service.py` (domain tests + ACL integration tests) |
+| `test_engine.py` | 22KB | ~5KB | Replace with `test_build_service.py` (domain tests with injected mocks — no real cargo build) |
 | `test_wait_for.py` | 23KB | ~5KB | Replace with `test_screen_region.py` (ACL integration tests) |
 | `test_proxy.py` | 23KB | ~8KB | Fix `stop` timeout test, move job_runner tests out, add `test_artifact_repository.py` |
 | `test_minecraft_runner.py` | 8KB | ~8KB | Replace with `test_minecraft_launcher.py` (ACL) + `test_test_service.py` (domain) |
@@ -863,7 +864,7 @@ Each step should be independently deployable and tested. No all-or-nothing rewri
 - [ ] Implement `build()` method
 - [ ] Inject `timeout`, `release` as constructor parameters
 - [ ] Update `engine.py` to use `CargoBuildAdapter` — remove inline cargo subprocess call
-- [ ] Create `test_cargo_build.py` with integration tests
+- [ ] Create `test_cargo_build.py` with **unit tests only** — mock `subprocess.run` to verify command construction, timeout, and release flag. Do NOT write integration tests that compile Rust code.
 
 ### Step 5: Create `MinecraftLauncher` — minecraft_launcher_lib ACL (1–2 hours)
 
@@ -918,7 +919,7 @@ Each step should be independently deployable and tested. No all-or-nothing rewri
 - [ ] Create `src/application/build_service.py`
 - [ ] Use `GitRepository`, `CargoBuildAdapter`, `ArtifactStorage`
 - [ ] Remove `create_job()` from `engine.py` (or reduce to thin wrapper)
-- [ ] Create `test_build_service.py` with domain tests
+- [ ] Create `test_build_service.py` with **unit tests** — inject mocked `GitRepository`, `CargoBuildAdapter`, and `ArtifactStorage`. Verify domain logic (call order, return values). Do NOT write integration tests that clone repos and compile Rust code.
 
 ### Step 12: Extract `TestService` — domain service (2–3 hours)
 
