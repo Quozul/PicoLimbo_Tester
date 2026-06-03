@@ -8,7 +8,7 @@ import os
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Type
 
 from .. import config
 from .. import database
@@ -17,10 +17,7 @@ from ..application.server_context import ServerContext
 from ..application.server_setup_service import ServerSetupService
 from ..domain.job import Job
 from ..infrastructure.artifact_repository import ArtifactRepository
-from ..infrastructure.artifact_storage import ArtifactStorage
-from ..infrastructure.cargo_build import CargoBuildAdapter
 from ..infrastructure.config_writer import ConfigWriter
-from ..infrastructure.git_repository import GitRepository
 from ..minecraft.input import VirtualInputController
 from ..minecraft.runner import test_single_version
 from ..proxy.factory import ProxyFactory
@@ -52,6 +49,10 @@ class JobOrchestrator:
         Minecraft game directory.
     screenshots_dir : Path
         Directory where test screenshots are saved.
+    build_service : BuildService
+        Domain service for building projects (injected for testability).
+    virtual_input_controller_cls : type[VirtualInputController], optional
+        Class to instantiate for virtual input (default: VirtualInputController).
     """
 
     def __init__(
@@ -62,10 +63,14 @@ class JobOrchestrator:
         artifact_repo: ArtifactRepository,
         game_directory: Path,
         screenshots_dir: Path,
+        build_service: BuildService,
+        virtual_input_controller_cls: Optional[Type[VirtualInputController]] = None,
     ) -> None:
         self._builds_dir = builds_dir
         self._game_directory = game_directory
         self._screenshots_dir = screenshots_dir
+        self._build_service = build_service
+        self._virtual_input_controller_cls = virtual_input_controller_cls or VirtualInputController
 
         # Domain services
         self._server_setup = ServerSetupService(
@@ -205,12 +210,7 @@ class JobOrchestrator:
 
     def _run_build(self, job: Job) -> None:
         """Run the build step using BuildService."""
-        git_repo = GitRepository(repos_dir=config.REPOS_DIR, timeout=1800.0)
-        cargo = CargoBuildAdapter(timeout=1800.0, release=True)
-        artifact_storage = ArtifactStorage(self._builds_dir)
-
-        build_service = BuildService(git_repo, cargo, artifact_storage, self._builds_dir)
-        result = build_service.build(
+        result = self._build_service.build(
             job.repo_url.value, job.ref, job.owner, job.repo_url.value.split("/")[-1].replace(".git", "")
         )
 
@@ -242,11 +242,11 @@ class JobOrchestrator:
 
         os.makedirs(self._screenshots_dir, exist_ok=True)
 
-        from ..minecraft.env import empty_directory
+        from ..minecraft.runner import empty_directory
 
         empty_directory(str(self._game_directory / "screenshots"))
 
-        virtual_device = VirtualInputController()
+        virtual_device = self._virtual_input_controller_cls()
 
         try:
             login_wait_timeout = job.login_wait_timeout
