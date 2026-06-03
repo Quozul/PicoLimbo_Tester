@@ -1,11 +1,10 @@
-"""Integration tests for src/infrastructure/git_repository.py.
+"""Unit tests for src/infrastructure/git_repository.py.
 
-These tests use real git operations against a temporary directory
-to verify clone, update, and resolve behaviour.
+All tests use mocked subprocess.run — no real git operations.
 """
 
-import subprocess
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -13,120 +12,220 @@ from src.infrastructure import git_repository
 
 
 # ---------------------------------------------------------------------------
-# Fixtures
+# Patch target — must patch where subprocess is imported, not at module level
 # ---------------------------------------------------------------------------
 
-@pytest.fixture()
-def git(tmp_path: Path) -> git_repository.GitRepository:
-    """Return a GitRepository backed by a temporary directory."""
-    return git_repository.GitRepository(repos_dir=tmp_path, timeout=60.0)
+_PATCH_TARGET = "src.infrastructure.git_repository.subprocess.run"
 
 
 # ---------------------------------------------------------------------------
 # 1. clone
 # ---------------------------------------------------------------------------
 
+
 class TestClone:
-    def test_clone_clones_repo(self, git: git_repository.GitRepository):
-        path = git.clone("Quozul", "PicoLimbo")
-        assert (path / ".git").exists()
+    def test_clone_calls_git_clone(self):
+        """clone() should invoke git clone with the correct URL."""
+        with patch(_PATCH_TARGET) as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            repo = git_repository.GitRepository(
+                repos_dir=Path("/tmp/repos"), timeout=60.0
+            )
+            repo.clone("Quozul", "PicoLimbo")
+            mock_run.assert_called_once_with(
+                ["git", "clone", "--depth", "1", "https://github.com/Quozul/PicoLimbo.git", "/tmp/repos/Quozul/PicoLimbo"],
+                cwd=None,
+                capture_output=True,
+                text=True,
+                timeout=60.0,
+            )
 
-    def test_clone_returns_existing_if_already_cloned(self, git: git_repository.GitRepository):
-        path1 = git.clone("Quozul", "PicoLimbo")
-        path2 = git.clone("Quozul", "PicoLimbo")
-        assert path1 == path2
+    def test_clone_returns_existing_if_already_cloned(self):
+        """clone() should skip git call when repo already exists."""
+        with patch(_PATCH_TARGET) as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            repo = git_repository.GitRepository(
+                repos_dir=Path("/tmp/repos"), timeout=60.0
+            )
+            mock_run.reset_mock()
+            # Simulate existing repo by patching Path.exists
+            with patch.object(Path, "exists", return_value=True):
+                with patch("pathlib.Path.mkdir"):
+                    result = repo.clone("Quozul", "PicoLimbo")
+                    assert result == Path("/tmp/repos/Quozul/PicoLimbo")
+                    mock_run.assert_not_called()
 
-    def test_clone_creates_parent_directories(self, tmp_path: Path):
-        """Deep nested paths should have parents created automatically."""
-        git = git_repository.GitRepository(repos_dir=tmp_path, timeout=60.0)
-        path = git.clone("Quozul", "PicoLimbo")
-        assert path.exists()
-        assert (path / ".git").exists()
+    def test_clone_creates_parent_directories(self):
+        """clone() should create parent directories before cloning."""
+        with patch(_PATCH_TARGET) as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            with patch("pathlib.Path.mkdir") as mock_mkdir:
+                repo = git_repository.GitRepository(
+                    repos_dir=Path("/tmp/deep/repos"), timeout=60.0
+                )
+                repo.clone("Quozul", "PicoLimbo")
+                mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
 
-    def test_clone_returns_correct_path_structure(self, git: git_repository.GitRepository):
-        path = git.clone("Quozul", "PicoLimbo")
-        assert str(path) == str(git._repos_dir / "Quozul" / "PicoLimbo")
+    def test_clone_returns_correct_path_structure(self):
+        """clone() should return the expected path."""
+        with patch(_PATCH_TARGET) as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            repo = git_repository.GitRepository(
+                repos_dir=Path("/tmp/repos"), timeout=60.0
+            )
+            result = repo.clone("Quozul", "PicoLimbo")
+            assert result == Path("/tmp/repos/Quozul/PicoLimbo")
 
 
 # ---------------------------------------------------------------------------
 # 2. update
 # ---------------------------------------------------------------------------
 
+
 class TestUpdate:
-    def test_update_fetches_and_checkouts(self, git: git_repository.GitRepository):
-        git.clone("Quozul", "PicoLimbo")
-        repo_path = git._repos_dir / "Quozul" / "PicoLimbo"
-        git.update(repo_path, "master")
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=str(repo_path),
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == 0
-        assert len(result.stdout.strip()) == 40
+    def test_update_runs_fetch_and_checkout(self):
+        """update() should run git fetch then git checkout FETCH_HEAD."""
+        with patch(_PATCH_TARGET) as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            repo = git_repository.GitRepository(
+                repos_dir=Path("/tmp/repos"), timeout=60.0
+            )
+            repo_path = Path("/tmp/repos/Quozul/PicoLimbo")
+            repo.update(repo_path, "main")
+            assert mock_run.call_count == 2
+            # First call: git fetch
+            fetch_call = mock_run.call_args_list[0]
+            assert fetch_call[0][0] == ["git", "fetch", "--depth=1", "origin", "main"]
+            assert fetch_call[1]["cwd"] == str(repo_path)
+            # Second call: git checkout FETCH_HEAD
+            checkout_call = mock_run.call_args_list[1]
+            assert checkout_call[0][0] == ["git", "checkout", "FETCH_HEAD"]
+            assert checkout_call[1]["cwd"] == str(repo_path)
 
 
 # ---------------------------------------------------------------------------
 # 3. resolve
 # ---------------------------------------------------------------------------
 
+
 class TestResolve:
-    def test_resolve_commit_returns_hash(self, git: git_repository.GitRepository):
-        git.clone("Quozul", "PicoLimbo")
-        repo_path = git._repos_dir / "Quozul" / "PicoLimbo"
-        hash_result = git.resolve(repo_path, "master")
-        assert len(hash_result.strip()) == 40
+    def test_resolve_commit_hash_directly(self):
+        """resolve() should checkout and return the hash directly when ref is a commit hash."""
+        with patch(_PATCH_TARGET) as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            repo = git_repository.GitRepository(
+                repos_dir=Path("/tmp/repos"), timeout=60.0
+            )
+            repo_path = Path("/tmp/repos/Quozul/PicoLimbo")
+            commit_hash = "a" * 40
+            result = repo.resolve(repo_path, commit_hash)
+            assert result == commit_hash
+            # Should only call git checkout (not fetch)
+            mock_run.assert_called_once()
+            assert mock_run.call_args[0][0] == ["git", "checkout", commit_hash]
 
-    def test_resolve_commit_hash_directly(self, git: git_repository.GitRepository):
-        git.clone("Quozul", "PicoLimbo")
-        repo_path = git._repos_dir / "Quozul" / "PicoLimbo"
-        # Get a real commit hash first
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=str(repo_path),
-            capture_output=True,
-            text=True,
-        )
-        commit_hash = result.stdout.strip()
-        # Resolve the same hash directly
-        resolved = git.resolve(repo_path, commit_hash)
-        assert resolved == commit_hash
+    def test_resolve_branch_fetches_and_resolves(self):
+        """resolve() should fetch and checkout branch, then rev-parse."""
+        with patch(_PATCH_TARGET) as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="abcdef1234567890abcdef1234567890abcdef12", stderr="")
+            repo = git_repository.GitRepository(
+                repos_dir=Path("/tmp/repos"), timeout=60.0
+            )
+            repo_path = Path("/tmp/repos/Quozul/PicoLimbo")
+            result = repo.resolve(repo_path, "main")
+            assert result == "abcdef1234567890abcdef1234567890abcdef12"
+            # Should call fetch, checkout FETCH_HEAD, and rev-parse
+            assert mock_run.call_count == 3
 
-    def test_resolve_branch_fetches_and_resolves(self, git: git_repository.GitRepository):
-        git.clone("Quozul", "PicoLimbo")
-        repo_path = git._repos_dir / "Quozul" / "PicoLimbo"
-        hash_result = git.resolve(repo_path, "master")
-        assert len(hash_result.strip()) == 40
+    def test_resolve_branch_fallback_on_fetch_failure(self):
+        """resolve() should fall back to rev-parse HEAD when fetch fails."""
+        # Use a callable that tracks how many times it has been called
+        call_order = []
+
+        def mock_run_side_effect(*args, **kwargs):
+            call_order.append(args[0])
+            cmd = args[0]
+            if cmd[1] in ("fetch", "checkout") and "FETCH_HEAD" not in cmd:
+                # git fetch or git checkout (not FETCH_HEAD) — fail
+                raise RuntimeError("Command failed")
+            # git checkout FETCH_HEAD or git rev-parse — succeed
+            if "FETCH_HEAD" in cmd:
+                return MagicMock(returncode=0, stdout="", stderr="")
+            # git rev-parse HEAD
+            return MagicMock(returncode=0, stdout="fedcba0987654321fedcba0987654321fedcba09", stderr="")
+
+        with patch(_PATCH_TARGET, side_effect=mock_run_side_effect) as mock_run:
+            repo = git_repository.GitRepository(
+                repos_dir=Path("/tmp/repos"), timeout=60.0
+            )
+            repo_path = Path("/tmp/repos/Quozul/PicoLimbo")
+            result = repo.resolve(repo_path, "develop")
+            assert result == "fedcba0987654321fedcba0987654321fedcba09"
+            # git fetch fails, so checkout FETCH_HEAD is skipped,
+            # then rev-parse HEAD succeeds — 2 calls total
+            assert mock_run.call_count == 2
 
 
 # ---------------------------------------------------------------------------
 # 4. _run_git error handling
 # ---------------------------------------------------------------------------
 
-class TestRunGit:
-    def test_raises_runtime_error_on_failure(self, git: git_repository.GitRepository):
-        with pytest.raises(RuntimeError, match="Command failed"):
-            # Use /tmp (exists but not a git repo) so git runs but fails
-            git._run_git(["git", "status"], cwd=Path("/tmp"))
 
-    def test_returns_stripped_stdout(self, git: git_repository.GitRepository):
-        git.clone("Quozul", "PicoLimbo")
-        repo_path = git._repos_dir / "Quozul" / "PicoLimbo"
-        result = git._run_git(["git", "rev-parse", "HEAD"], cwd=repo_path)
-        assert result == result.strip()
-        assert len(result) == 40
+class TestRunGit:
+    def test_raises_runtime_error_on_failure(self):
+        """_run_git() should raise RuntimeError on non-zero exit code."""
+        with patch(_PATCH_TARGET) as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=128,
+                stdout="",
+                stderr="fatal: not a git repository",
+            )
+            repo = git_repository.GitRepository(
+                repos_dir=Path("/tmp/repos"), timeout=60.0
+            )
+            with pytest.raises(RuntimeError, match="Command failed"):
+                repo._run_git(["git", "status"], cwd=Path("/tmp"))
+
+    def test_returns_stripped_stdout(self):
+        """_run_git() should return stripped stdout."""
+        with patch(_PATCH_TARGET) as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="  abc123  \n",
+                stderr="",
+            )
+            repo = git_repository.GitRepository(
+                repos_dir=Path("/tmp/repos"), timeout=60.0
+            )
+            result = repo._run_git(["git", "rev-parse", "HEAD"])
+            assert result == "abc123"
+
+    def test_passes_timeout_correctly(self):
+        """_run_git() should pass the configured timeout."""
+        with patch(_PATCH_TARGET) as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            repo = git_repository.GitRepository(
+                repos_dir=Path("/tmp/repos"), timeout=300.0
+            )
+            repo._run_git(["git", "status"])
+            assert mock_run.call_args[1]["timeout"] == 300.0
 
 
 # ---------------------------------------------------------------------------
 # 5. _is_commit_hash helper
 # ---------------------------------------------------------------------------
 
+
 class TestIsCommitHash:
-    def test_valid_40_char_hex(self):
-        assert git_repository._is_commit_hash(
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        ) is True
+    def test_valid_40_char_hex_lowercase(self):
+        assert git_repository._is_commit_hash("a" * 40) is True
+
+    def test_valid_40_char_hex_uppercase(self):
+        assert git_repository._is_commit_hash("A" * 40) is True
+
+    def test_valid_40_char_hex_mixed_case(self):
+        # Exactly 40 hex chars with mixed case
+        assert git_repository._is_commit_hash("aB3dEf456789012345678901234567890abcdef1") is True
 
     def test_invalid_short_hash(self):
         assert git_repository._is_commit_hash("abc1234") is False
@@ -134,5 +233,14 @@ class TestIsCommitHash:
     def test_invalid_branch_name(self):
         assert git_repository._is_commit_hash("main") is False
 
-    def test_empty_string(self):
+    def test_invalid_empty_string(self):
         assert git_repository._is_commit_hash("") is False
+
+    def test_invalid_non_hex_characters(self):
+        assert git_repository._is_commit_hash("g" * 40) is False
+
+    def test_invalid_39_chars(self):
+        assert git_repository._is_commit_hash("a" * 39) is False
+
+    def test_invalid_41_chars(self):
+        assert git_repository._is_commit_hash("a" * 41) is False
