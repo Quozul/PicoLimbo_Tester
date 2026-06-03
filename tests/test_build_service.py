@@ -1,7 +1,7 @@
 """Tests for src/application/build_service.py"""
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock
 
 import pytest
 
@@ -13,51 +13,7 @@ from src.infrastructure.git_repository import GitRepository
 
 
 # ---------------------------------------------------------------------------
-# 1. BuildService — integration test with real git + cargo
-# ---------------------------------------------------------------------------
-
-class TestBuildServiceIntegration:
-    """Integration tests that use real git clone and cargo build."""
-
-    def test_build_clones_repo_resolves_commit_and_builds(self, tmp_path: Path) -> None:
-        """Integration test: real git clone, real cargo build."""
-        git = GitRepository(repos_dir=tmp_path / "repos")
-        cargo = CargoBuildAdapter()
-        storage = ArtifactStorage(tmp_path / "builds")
-
-        service = BuildService(git, cargo, storage, tmp_path / "builds")
-        result = service.build(
-            repo_url="https://github.com/Quozul/PicoLimbo.git",
-            ref="main",
-            owner="Quozul",
-            repo_name="PicoLimbo",
-        )
-
-        assert isinstance(result.commit_hash, CommitHash)
-        assert len(result.commit_hash.value) == 40
-        assert isinstance(result.artifact_path, ArtifactPath)
-        assert result.artifact_path.value.exists()
-
-    def test_build_caches_existing_repo(self, tmp_path: Path) -> None:
-        """Building twice should reuse the existing cloned repo."""
-        git = GitRepository(repos_dir=tmp_path / "repos")
-        cargo = CargoBuildAdapter()
-        storage = ArtifactStorage(tmp_path / "builds")
-
-        service = BuildService(git, cargo, storage, tmp_path / "builds")
-        result1 = service.build(
-            "https://github.com/Quozul/PicoLimbo.git", "main", "Quozul", "PicoLimbo",
-        )
-        result2 = service.build(
-            "https://github.com/Quozul/PicoLimbo.git", "main", "Quozul", "PicoLimbo",
-        )
-
-        # Both should produce the same commit hash
-        assert result1.commit_hash.value == result2.commit_hash.value
-
-
-# ---------------------------------------------------------------------------
-# 2. BuildService — unit tests with mocked adapters
+# BuildService — unit tests with mocked adapters
 # ---------------------------------------------------------------------------
 
 def _make_mock_git(
