@@ -764,24 +764,21 @@ def test_build_clones_repo_resolves_commit_and_builds():
 
 ### 8.2 Integration tests — test ACL adapters with real external services
 
-```python
-# test_git_repository.py
-def test_clone_clones_repo(tmp_path):
-    git = GitRepository(repos_dir=tmp_path)
-    path = git.clone("Quozul", "PicoLimbo")
-    assert (path / ".git").exists()
+**None.** No external service calls are made in automated tests. All ACL adapters are tested with mocked subprocess/http calls:
 
-def test_update_fetches_and_checkouts(tmp_path):
-    git = GitRepository(repos_dir=tmp_path)
+```python
+# test_git_repository.py — unit test with mocked subprocess
+with patch("src.infrastructure.git_repository.subprocess.run") as mock_run:
+    mock_run.return_value = MagicMock(returncode=0, stdout="abc123", stderr="")
+    git = GitRepository(repos_dir=Path("/tmp/repos"))
     git.clone("Quozul", "PicoLimbo")
-    git.update(tmp_path / "PicoLimbo", "main")
-    result = subprocess.run(["git", "rev-parse", "HEAD"],
-                            cwd=str(tmp_path / "PicoLimbo"),
-                            capture_output=True, text=True)
-    assert result.returncode == 0
+    mock_run.assert_called_once_with(
+        ["git", "clone", "--depth", "1", "https://github.com/Quozul/PicoLimbo.git", "/tmp/repos/Quozul/PicoLimbo"],
+        cwd=None, capture_output=True, text=True, timeout=1800.0,
+    )
 ```
 
-**Real git operations on a temp directory.** No mocking needed.
+**Mock subprocess.run to verify command construction, arguments, and return values.** No real git, no real HTTP, no real anything external.
 
 ### 8.3 What to stop testing
 
@@ -797,8 +794,9 @@ def test_update_fetches_and_checkouts(tmp_path):
 
 - **Domain invariants** — Job cannot be in "testing" without an artifact
 - **State machine transitions** — queued → building → testing → finished
-- **ACL adapters with real services** — git clone, PaperMC API
+- **ACL adapters with real services** — none (no external service calls in automated tests)
   - **NOT cargo build**: `CargoBuildAdapter` is a local build step, not an external service. Tests must use `subprocess.run` mocking to verify command construction. Do NOT write integration tests that compile Rust code.
+  - **NOT git clone**: `GitRepository` calls an external git remote. Tests must use `subprocess.run` mocking to verify command construction. Do NOT write integration tests that clone repos from GitHub.
 - **Pure value objects** — CommitHash validation, Version comparison, JobStatus transitions
 - **Error paths** — network failure, build failure, timeout
 
@@ -845,7 +843,7 @@ Each step should be independently deployable and tested. No all-or-nothing rewri
 - [ ] Implement `clone()`, `update()`, `resolve()` methods
 - [ ] Move `_run()` subprocess wrapper into `GitRepository`
 - [ ] Inject `repos_dir` and `timeout` as constructor parameters
-- [ ] Create `test_git_repository.py` with integration tests (real git on temp dir)
+- [ ] Create `test_git_repository.py` with **unit tests only** — mock `subprocess.run` to verify command construction, error handling, and fallback logic. Do NOT write integration tests that clone repos from GitHub.
 - [ ] Update `engine.py` to use `GitRepository` — remove `ensure_repo_cloned()`, `update_repo()`, `resolve_commit()`
 - [ ] Update tests to inject `MockGitRepository`
 
