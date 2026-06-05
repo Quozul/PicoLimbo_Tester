@@ -221,7 +221,6 @@ class TestServerSetupService:
             mock_proxy_manager.start.assert_called_once()
             call_kwargs = mock_proxy_manager.start.call_args
             assert call_kwargs[1]["jar_path"] == Path("/tmp/velocity-1.21.8.jar")
-            assert call_kwargs[1]["forwarding_secret"] == "sup3r-s3cr3t"
             assert call_kwargs[1]["plugins"] == ["test-plugin.jar"]
 
             # Verify config was written

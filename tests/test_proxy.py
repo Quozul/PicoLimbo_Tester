@@ -265,74 +265,72 @@ class TestVelocityProxyManagerReady:
 
     def test_wait_for_ready_detects_done_log(self, manager):
         """Parses 'Listening on' line from stdout and returns."""
+        # Build the output string and split into single characters
+        output = "[15:37:31 INFO]: Loading Velocity configuration...\n"
+        output += "[15:37:31 INFO]: Listening on /[0:0:0:0:0:0:0:0]:25565\n"
+        chars = list(output)
+
         mock_stdout = MagicMock()
-        mock_stdout.readline.side_effect = [
-            "[15:37:31 INFO]: Loading Velocity configuration...\n",
-            "[15:37:31 INFO]: Listening on /[0:0:0:0:0:0:0:0]:25565\n",
-            "",  # extra reads return empty after side_effect is exhausted
-        ]
+        mock_stdout.read.side_effect = chars + [""]  # chars then empty
         proc = MagicMock()
         proc.poll.return_value = None
         proc.stdout = mock_stdout
 
-        # Should not raise — returns when "Listening on" is found
-        manager.wait_for_ready(proc, timeout=5.0)
+        with patch("src.proxy.velocity.select.select") as mock_select:
+            mock_select.return_value = ([mock_stdout], [], [])
+            manager.wait_for_ready(proc, timeout=5.0)
 
     def test_wait_for_ready_detects_done_line(self, manager):
         """Also detects 'Done' line as a ready signal."""
+        output = "[15:37:31 INFO]: Loading...\n"
+        output += "[15:37:31 INFO]: Done (1.13s)!\n"
+        chars = list(output)
+
         mock_stdout = MagicMock()
-        # Use chain + repeat so after specified lines are exhausted,
-        # readline keeps returning "" (empty) instead of raising StopIteration.
-        mock_stdout.readline.side_effect = chain(
-            [
-                "[15:37:31 INFO]: Loading...\n",
-                "[15:37:31 INFO]: Done (1.13s)!\n",
-            ],
-            repeat(""),
-        )
+        mock_stdout.read.side_effect = chars + [""]
         proc = MagicMock()
         proc.poll.return_value = None
         proc.stdout = mock_stdout
 
-        manager.wait_for_ready(proc, timeout=5.0)
+        with patch("src.proxy.velocity.select.select") as mock_select:
+            mock_select.return_value = ([mock_stdout], [], [])
+            manager.wait_for_ready(proc, timeout=5.0)
 
     # --- test_wait_for_ready_timeout ---
 
     def test_wait_for_ready_timeout(self, manager):
         """Raises RuntimeError when proxy does not become ready within timeout."""
+        output = "[15:37:31 INFO]: Loading configuration...\n"
+        output += "[15:37:32 INFO]: Loading plugins...\n"
+        chars = list(output)
+
         mock_stdout = MagicMock()
-        mock_stdout.readline.side_effect = chain(
-            [
-                "[15:37:31 INFO]: Loading configuration...\n",
-                "[15:37:32 INFO]: Loading plugins...\n",
-            ],
-            repeat(""),
-        )
+        mock_stdout.read.side_effect = chars + [""]
         proc = MagicMock()
         proc.poll.return_value = None
         proc.stdout = mock_stdout
 
-        with patch("time.sleep"):  # speed up
+        with patch("src.proxy.velocity.select.select") as mock_select:
+            mock_select.return_value = ([mock_stdout], [], [])
             with pytest.raises(RuntimeError, match="did not become ready"):
                 manager.wait_for_ready(proc, timeout=0.5)
 
     def test_wait_for_ready_process_exits(self, manager):
         """Raises RuntimeError when process exits before becoming ready."""
+        output = "[15:37:31 INFO]: Starting...\n"
+        output += "[15:37:31 INFO]: Crashed!\n"
+        chars = list(output)
+
         mock_stdout = MagicMock()
-        mock_stdout.readline.side_effect = chain(
-            [
-                "[15:37:31 INFO]: Starting...\n",
-                "[15:37:31 INFO]: Crashed!\n",
-            ],
-            repeat(""),
-        )
+        mock_stdout.read.side_effect = chars + [""]
         proc = MagicMock()
-        # poll returns None while running, then 1 (exited) once or forever after
-        proc.poll.side_effect = chain([None, None, None, 1], repeat(1))
+        # poll returns None initially, then 1 (exited)
+        proc.poll.side_effect = chain([None, None, 1], repeat(1))
         proc.stdout = mock_stdout
         proc.returncode = 1
 
-        with patch("time.sleep"):
+        with patch("src.proxy.velocity.select.select") as mock_select:
+            mock_select.return_value = ([mock_stdout], [], [])
             with pytest.raises(RuntimeError, match="exited with code 1"):
                 manager.wait_for_ready(proc, timeout=0.5)
 

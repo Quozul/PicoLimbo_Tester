@@ -20,9 +20,10 @@ class ProxyManager(ABC):
     @abstractmethod
     def start(
         self, config_dir: Path, pico_limbo_port: int,
+        jar_path: Path,
+        forwarding_secret: str,
+        plugins: list[str] | None = None,
         forwarding_method: str = "modern",
-        plugin: Optional[str] = None,
-        plugins: Optional[list[str]] = None,
     ) -> Popen:
         """Start the proxy process.
 

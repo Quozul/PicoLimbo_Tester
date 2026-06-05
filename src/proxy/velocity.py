@@ -1,8 +1,10 @@
 """Velocity proxy implementation with PaperMC API integration."""
 
 import json
+import os
 import logging
 import re
+import select
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -34,6 +36,7 @@ class VelocityProxyManager(ProxyManager):
         cache_dir: Path | None = None,
         artifact_repo: ArtifactRepository | None = None,
         config_writer: ConfigWriter | None = None,
+        forwarding_secret: str | None = None,
     ) -> None:
         """Initialize the Velocity proxy manager.
 
@@ -45,6 +48,9 @@ class VelocityProxyManager(ProxyManager):
                 ``config.VELOCITY_API_BASE``.
             config_writer: Pre-configured ``ConfigWriter`` for TOML output.
                 If ``None``, a fresh instance is created.
+            forwarding_secret: Forwarding secret for player-info forwarding.
+                Falls back to ``VELOCITY_FORWARDING_SECRET`` env var, then
+                to the hardcoded default in ``config``.
         """
         self._cache_dir = cache_dir or config.PROXY_CACHE_DIR / "velocity"
         self._cache_dir.mkdir(parents=True, exist_ok=True)
@@ -54,6 +60,10 @@ class VelocityProxyManager(ProxyManager):
             cache_dir=self._cache_dir,
         )
         self._config_writer = config_writer or ConfigWriter()
+        # Use env var if set, otherwise fall back to hardcoded default
+        self._forwarding_secret = forwarding_secret or os.environ.get(
+            "VELOCITY_FORWARDING_SECRET", config._FORWARDING_SECRET
+        )
 
     def download_if_needed(self) -> Path:
         """Download Velocity jar if not already cached.
@@ -115,17 +125,17 @@ class VelocityProxyManager(ProxyManager):
         config_dir: Path,
         pico_limbo_port: int,
         jar_path: Path,
-        forwarding_secret: str,
         plugins: list[str] | None = None,
         forwarding_method: str = "modern",
     ) -> Popen:
         """Start the Velocity proxy process.
 
+        Uses self._forwarding_secret (set via constructor, env var, or default).
+
         Args:
             config_dir: Directory where velocity.toml will be written.
             pico_limbo_port: Port that PicoLimbo is running on.
             jar_path: Path to the Velocity jar file.
-            forwarding_secret: Forwarding secret for player-info forwarding.
             plugins: List of plugin names to copy into plugins folder.
             forwarding_method: Player info forwarding mode
                 (none, legacy, bungeeguard, modern).
@@ -141,11 +151,27 @@ class VelocityProxyManager(ProxyManager):
 
         # Write forwarding secret file
         secret_path = config_dir / "forwarding.secret"
-        secret_path.write_text(forwarding_secret)
+        secret_path.write_text(self._forwarding_secret)
         logger.info("Wrote Velocity forwarding secret to %s", secret_path)
 
         # Copy plugins
-        self._copy_plugins(config_dir, plugins)
+        if plugins:
+            plugins_dir = config_dir / "plugins"
+            plugins_dir.mkdir(exist_ok=True)
+            import shutil
+
+            for plugin_name in plugins:
+                source = PLUGINS_DIR / plugin_name
+                dest = plugins_dir / plugin_name
+                if source.exists():
+                    shutil.copy2(str(source), str(dest))
+                    logger.info("Copied plugin %s to %s", plugin_name, dest)
+                else:
+                    logger.warning(
+                        "Plugin file %s not found in %s, skipping",
+                        plugin_name,
+                        PLUGINS_DIR,
+                    )
 
         logger.info(
             "Starting Velocity from %s with config %s",
@@ -184,36 +210,12 @@ class VelocityProxyManager(ProxyManager):
                 except subprocess.TimeoutExpired:
                     logger.error("Velocity failed to be killed")
 
-    def _copy_plugins(self, config_dir: Path, plugins: list[str] | None = None) -> None:
-        """Copy plugin .jar files into the proxy's plugins directory.
-
-        Args:
-            config_dir: Directory where velocity.toml is written (parent of plugins/).
-            plugins: List of plugin names to copy.
-        """
-        if not plugins:
-            return
-
-        plugins_dir = config_dir / "plugins"
-        plugins_dir.mkdir(exist_ok=True)
-
-        import shutil
-
-        for plugin_name in plugins:
-            source = PLUGINS_DIR / plugin_name
-            dest = plugins_dir / plugin_name
-            if source.exists():
-                shutil.copy2(str(source), str(dest))
-                logger.info("Copied plugin %s to %s", plugin_name, dest)
-            else:
-                logger.warning("Plugin file %s not found in %s, skipping", plugin_name, PLUGINS_DIR)
-
     def wait_for_ready(
         self, proc: Popen, timeout: float = 30.0
     ) -> None:
         """Wait for Velocity to be ready to accept connections.
 
-        Reads Velocity's stdout line by line and checks for readiness patterns.
+        Uses select.select() for non-blocking I/O instead of busy-waiting.
 
         Args:
             proc: The Velocity process to wait for.
@@ -223,19 +225,32 @@ class VelocityProxyManager(ProxyManager):
             RuntimeError: If the proxy does not become ready within the timeout.
         """
         deadline = time.time() + timeout
+        buffer = ""
         while time.time() < deadline and proc.poll() is None:
-            line = proc.stdout.readline()
-            if line:
-                logger.info("Velocity: %s", line.rstrip())
-                if LOGGING_ON_PATTERN.search(line):
-                    logger.info("Velocity: detected 'Listening on' — proxy is ready")
-                    return
-                if DONE_PATTERN.search(line):
-                    logger.info("Velocity: detected 'Done' — proxy is ready")
-                    return
-            time.sleep(0.1)
+            # Use select to wait for data with a small timeout
+            ready, _, _ = select.select([proc.stdout], [], [], 0.1)
+            if ready:
+                chunk = proc.stdout.read(1)  # Read one char at a time
+                if not chunk:
+                    break
+                buffer += chunk
+                if "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
+                    logger.info("Velocity: %s", line.rstrip())
+                    if LOGGING_ON_PATTERN.search(line):
+                        logger.info("Velocity: detected 'Listening on' — proxy is ready")
+                        return
+                    if DONE_PATTERN.search(line):
+                        logger.info("Velocity: detected 'Done' — proxy is ready")
+                        return
+            # Check if process exited
+            if proc.poll() is not None:
+                break
 
         # If we get here, either the process died or timeout was hit
+        # Drain remaining buffer for logging
+        if buffer:
+            logger.info("Velocity: %s", buffer.rstrip())
         if proc.poll() is not None:
             raise RuntimeError(
                 f"Velocity process exited with code {proc.returncode}"

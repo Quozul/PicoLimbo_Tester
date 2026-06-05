@@ -18,7 +18,6 @@ if TYPE_CHECKING:
 from ..config import (
     PICO_LIMBO_INTERNAL_PORT,
     SERVER_ADDRESS,
-    _FORWARDING_SECRET,
 )
 from ..domain.job import Job
 from ..domain.value_objects import ProxyType
@@ -111,7 +110,6 @@ class ServerSetupService:
                 config_dir=proxy_dir,
                 pico_limbo_port=PICO_LIMBO_INTERNAL_PORT,
                 jar_path=jar_path,
-                forwarding_secret=_FORWARDING_SECRET,
                 plugins=job.plugins or [],
             )
 

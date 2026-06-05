@@ -37,7 +37,10 @@ def _make_orchestrator() -> JobOrchestrator:
 
     return JobOrchestrator(
         builds_dir=config.BUILDS_DIR,
-        proxy_factory=ProxyFactory(ConfigWriter()),
+        proxy_factory=ProxyFactory(
+            ConfigWriter(),
+            forwarding_secret=config._FORWARDING_SECRET,
+        ),
         config_writer=ConfigWriter(),
         artifact_repo=ArtifactRepository(
             api_base=config.VELOCITY_API_BASE,

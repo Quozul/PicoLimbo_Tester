@@ -22,8 +22,13 @@ class ProxyFactory:
         Shared configuration writer used by proxy managers.
     """
 
-    def __init__(self, config_writer: "ConfigWriter") -> None:
+    def __init__(
+        self,
+        config_writer: "ConfigWriter",
+        forwarding_secret: str | None = None,
+    ) -> None:
         self._config_writer = config_writer
+        self._forwarding_secret = forwarding_secret
         self._manager_map: dict[ProxyType, type[ProxyManager]] = {
             ProxyType.VELOCITY: None,  # populated lazily
         }
@@ -52,6 +57,9 @@ class ProxyFactory:
 
         if proxy_type == ProxyType.VELOCITY:
             VelocityProxyManagerClass = self._import_velocity()
-            return VelocityProxyManagerClass(config_writer=self._config_writer)
+            return VelocityProxyManagerClass(
+                config_writer=self._config_writer,
+                forwarding_secret=self._forwarding_secret,
+            )
 
         return None
