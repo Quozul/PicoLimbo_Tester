@@ -12,6 +12,14 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
+@pytest.fixture(autouse=True)
+def reset_di():
+    """Reset DI module instances before each test."""
+    from src import di
+    di.reset()
+    yield
+
+
 @pytest.fixture
 def mock_database():
     """Provide a mock database module."""

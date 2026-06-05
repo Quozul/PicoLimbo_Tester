@@ -123,52 +123,65 @@ class TestIsCommitHash:
 
 
 # ---------------------------------------------------------------------------
-# 3. _get_git_repo  (lazy initialisation)
+# 3. DI integration — lazy initialisation via di module
 # ---------------------------------------------------------------------------
 
 class TestGetGitRepo:
+    """Tests for get_git_repo via the DI module."""
+
     def test_creates_git_repo_on_first_call(self):
-        # Reset the module-level instance so we can test fresh creation
-        engine._git_repo = None
+        from src import di
+
+        # Reset DI so we test fresh creation
+        di.reset()
 
         with patch(
-            "src.builder.engine.git_repo_module.GitRepository"
+            "src.di.GitRepository"
         ) as mock_cls:
             instance = MagicMock()
             mock_cls.return_value = instance
-            result = engine._get_git_repo()
+            result = di.get_git_repo()
 
         assert result is instance
         mock_cls.assert_called_once()
         assert mock_cls.call_args.kwargs["repos_dir"] is not None
+        assert mock_cls.call_args.kwargs["timeout"] == 1800.0
 
     def test_returns_same_instance_on_subsequent_calls(self):
+        from src import di
+
         mock_instance = MagicMock()
-        engine._git_repo = mock_instance
-        result = engine._get_git_repo()
+        di._git_repo = mock_instance
+        result = di.get_git_repo()
         assert result is mock_instance
 
 
 class TestGetCargo:
+    """Tests for get_cargo via the DI module."""
+
     def test_creates_cargo_adapter_on_first_call(self):
-        # Reset the module-level instance so we can test fresh creation
-        engine._cargo = None
+        from src import di
+
+        di.reset()
 
         with patch(
-            "src.builder.engine.cargo_build_module.CargoBuildAdapter"
+            "src.di.CargoBuildAdapter"
         ) as mock_cls:
             instance = MagicMock()
             mock_cls.return_value = instance
-            result = engine._get_cargo()
+            result = di.get_cargo()
 
         assert result is instance
         mock_cls.assert_called_once()
-        assert mock_cls.call_args.kwargs["timeout"] is not None
+        assert mock_cls.call_args.kwargs["timeout"] == 1800.0
+        assert mock_cls.call_args.kwargs["release"] is True
 
     def test_returns_same_instance_on_subsequent_calls(self):
+        from src import di
+
         mock_instance = MagicMock()
-        engine._cargo = mock_instance
-        result = engine._get_cargo()
+        di._cargo = mock_instance
+        result = di.get_cargo()
         assert result is mock_instance
 
 
@@ -181,9 +194,6 @@ class TestBuildProject:
         """build_project should delegate to BuildService.build()."""
         from src.application.build_service import BuildResult
         from src.domain.value_objects import ArtifactPath, CommitHash
-
-        # Reset module-level service so we get a fresh one
-        engine._build_service = None
 
         mock_service = MagicMock()
         mock_result = BuildResult(
@@ -211,8 +221,6 @@ class TestBuildProject:
         from src.application.build_service import BuildResult
         from src.domain.value_objects import ArtifactPath, CommitHash
 
-        engine._build_service = None
-
         mock_service = MagicMock()
         mock_result = BuildResult(
             commit_hash=CommitHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
@@ -230,8 +238,6 @@ class TestBuildProject:
 
     def test_raises_when_build_service_raises(self):
         """build_project should propagate exceptions from BuildService."""
-        engine._build_service = None
-
         mock_service = MagicMock()
         mock_service.build.side_effect = RuntimeError("Build failed")
 
@@ -300,7 +306,7 @@ class TestCreateJob:
         mock_git_repo = MagicMock()
 
         with patch.object(engine, "extract_owner_from_url", return_value=("Quozul", "PicoLimbo")) as mock_extract:
-            with patch.object(engine, "_get_git_repo", return_value=mock_git_repo) as mock_get_git:
+            with patch.object(engine, "get_git_repo", return_value=mock_git_repo) as mock_get_git:
                 mock_git_repo.clone.return_value = mock_repo_path
                 mock_git_repo.resolve.return_value = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                 with patch.object(engine.database, "create_job", return_value=mock_job) as mock_db_create:
@@ -326,7 +332,7 @@ class TestCreateJob:
         mock_git_repo = MagicMock()
 
         with patch.object(engine, "extract_owner_from_url", return_value=("Quozul", "PicoLimbo")) as mock_extract:
-            with patch.object(engine, "_get_git_repo", return_value=mock_git_repo) as mock_get_git:
+            with patch.object(engine, "get_git_repo", return_value=mock_git_repo) as mock_get_git:
                 mock_git_repo.clone.return_value = mock_repo_path
                 mock_git_repo.resolve.return_value = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
                 with patch.object(engine.database, "create_job", return_value=mock_job) as mock_db_create:
@@ -353,7 +359,7 @@ class TestCreateJob:
         mock_git_repo = MagicMock()
 
         with patch.object(engine, "extract_owner_from_url", return_value=("Quozul", "PicoLimbo")) as mock_extract:
-            with patch.object(engine, "_get_git_repo", return_value=mock_git_repo) as mock_get_git:
+            with patch.object(engine, "get_git_repo", return_value=mock_git_repo) as mock_get_git:
                 mock_git_repo.clone.return_value = mock_repo_path
                 mock_git_repo.resolve.return_value = "cccccccccccccccccccccccccccccccccccccccc"
                 with patch.object(engine.database, "create_job", return_value=mock_job) as mock_db_create:

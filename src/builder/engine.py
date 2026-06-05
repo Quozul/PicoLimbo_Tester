@@ -11,9 +11,7 @@ from typing import Optional
 from .. import config
 from .. import database
 from ..application.build_service import BuildResult
-from ..infrastructure import cargo_build as cargo_build_module
-from ..infrastructure import git_repository as git_repo_module
-from ..infrastructure.artifact_storage import ArtifactStorage
+from ..di import get_build_service, get_git_repo
 
 logger = logging.getLogger(__name__)
 
@@ -24,29 +22,6 @@ GITHUB_URL_RE = re.compile(
 
 # Git commit hash: 40-character hex string
 COMMIT_HASH_RE = re.compile(r"^[0-9a-fA-F]{40}$")
-
-# Module-level adapters (lazy-initialised on first use)
-_git_repo: git_repo_module.GitRepository | None = None
-_cargo: cargo_build_module.CargoBuildAdapter | None = None
-_build_service: BuildService | None = None
-
-
-def _get_git_repo() -> git_repo_module.GitRepository:
-    """Return the module-level GitRepository, creating it lazily."""
-    global _git_repo
-    if _git_repo is None:
-        _git_repo = git_repo_module.GitRepository(repos_dir=config.REPOS_DIR)
-    return _git_repo
-
-
-def _get_cargo() -> cargo_build_module.CargoBuildAdapter:
-    """Return the module-level CargoBuildAdapter, creating it lazily."""
-    global _cargo
-    if _cargo is None:
-        _cargo = cargo_build_module.CargoBuildAdapter(
-            timeout=config.GIT_CARGO_TIMEOUT,
-        )
-    return _cargo
 
 
 def extract_owner_from_url(repo_url: str) -> tuple[str, str]:
@@ -74,16 +49,8 @@ def is_commit_hash(ref: str) -> bool:
 
 
 def _get_build_service() -> BuildService:
-    """Return the module-level BuildService, creating it lazily."""
-    global _build_service
-    if _build_service is None:
-        _build_service = BuildService(
-            git_repo=_get_git_repo(),
-            cargo=_get_cargo(),
-            artifact_storage=ArtifactStorage(config.BUILDS_DIR),
-            builds_dir=config.BUILDS_DIR,
-        )
-    return _build_service
+    """Return the shared BuildService from DI."""
+    return get_build_service()
 
 
 def build_project(repo_url: str, ref: str, owner: str, repo_name: str) -> BuildResult:
@@ -114,10 +81,10 @@ def create_job(
     owner, repo_name = extract_owner_from_url(repo_url)
 
     # Ensure repo is cloned (or already exists)
-    repo_path = _get_git_repo().clone(owner, repo_name)
+    repo_path = get_git_repo().clone(owner, repo_name)
 
     # Resolve commit hash
-    commit_hash = _get_git_repo().resolve(repo_path, ref)
+    commit_hash = get_git_repo().resolve(repo_path, ref)
 
     # Always create a new job - step-level logic handles skipping
     job = database.create_job(

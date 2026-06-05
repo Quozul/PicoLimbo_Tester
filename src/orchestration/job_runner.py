@@ -13,14 +13,12 @@ from typing import Optional
 
 from .. import config
 from .. import database
-from ..application.build_service import BuildService
-from ..domain.job import Job
-from ..infrastructure.artifact_repository import ArtifactRepository
-from ..infrastructure.artifact_storage import ArtifactStorage
-from ..infrastructure.cargo_build import CargoBuildAdapter
-from ..infrastructure.config_writer import ConfigWriter
-from ..infrastructure.git_repository import GitRepository
-from ..proxy.factory import ProxyFactory
+from ..di import (
+    get_artifact_repo,
+    get_build_service,
+    get_config_writer,
+    get_proxy_factory,
+)
 from .job_orchestrator import JobOrchestrator
 
 logger = logging.getLogger(__name__)
@@ -29,26 +27,15 @@ SCREENSHOTS_DIR = config.SCREENSHOTS_DIR  # kept for backward compat
 
 
 def _make_orchestrator() -> JobOrchestrator:
-    """Create a JobOrchestrator with default dependencies."""
-    git_repo = GitRepository(repos_dir=config.REPOS_DIR, timeout=1800.0)
-    cargo = CargoBuildAdapter(timeout=1800.0, release=True)
-    artifact_storage = ArtifactStorage(config.BUILDS_DIR)
-    build_service = BuildService(git_repo, cargo, artifact_storage, config.BUILDS_DIR)
-
+    """Create a JobOrchestrator with shared dependencies from DI."""
     return JobOrchestrator(
         builds_dir=config.BUILDS_DIR,
-        proxy_factory=ProxyFactory(
-            ConfigWriter(),
-            forwarding_secret=config._FORWARDING_SECRET,
-        ),
-        config_writer=ConfigWriter(),
-        artifact_repo=ArtifactRepository(
-            api_base=config.VELOCITY_API_BASE,
-            cache_dir=config.PROXY_CACHE_DIR / "velocity",
-        ),
+        proxy_factory=get_proxy_factory(),
+        config_writer=get_config_writer(),
+        artifact_repo=get_artifact_repo(),
         game_directory=config.GAME_DIRECTORY,
         screenshots_dir=config.SCREENSHOTS_DIR,
-        build_service=build_service,
+        build_service=get_build_service(),
     )
 
 
