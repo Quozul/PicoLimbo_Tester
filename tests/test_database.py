@@ -488,3 +488,137 @@ class TestGetBuildingJobs:
                 commit_hash=f"hash{i:04d}", versions=["3.10"],
             )
         assert db.get_building_jobs() == []
+
+
+# ---------------------------------------------------------------------------
+# 9. update_job security
+# ---------------------------------------------------------------------------
+
+class TestUpdateJobSecurity:
+    """Tests for update_job() column validation (SQL injection prevention)."""
+
+    def test_update_job_with_valid_column(self, patched_db):
+        """Valid column names should work."""
+        created = db.create_job(
+            repo_url="https://github.com/foo/bar",
+            ref="main",
+            owner="foo",
+            commit_hash="abc123def456",
+            versions=["3.10"],
+        )
+        updated = db.update_job(created["job_id"], status="building")
+        assert updated["status"] == "building"
+
+    def test_update_job_with_invalid_column_raises_value_error(self, patched_db):
+        """Invalid column names should raise ValueError, not SQL."""
+        created = db.create_job(
+            repo_url="https://github.com/foo/bar",
+            ref="main",
+            owner="foo",
+            commit_hash="abc123def456",
+            versions=["3.10"],
+        )
+        with pytest.raises(ValueError, match="Invalid column"):
+            db.update_job(created["job_id"], status="queued", **{"'; DROP TABLE jobs; --": "pwned"})
+
+    def test_update_job_with_sql_injection_attempt_raises_value_error(self, patched_db):
+        """SQL injection attempt via column name should be rejected."""
+        created = db.create_job(
+            repo_url="https://github.com/foo/bar",
+            ref="main",
+            owner="foo",
+            commit_hash="abc123def456",
+            versions=["3.10"],
+        )
+        with pytest.raises(ValueError, match="Invalid column"):
+            db.update_job(
+                created["job_id"],
+                **{"status': OR '1'='1": "pwned"},
+            )
+
+    def test_allowed_columns_constant_contains_expected_columns(self):
+        """The allowed columns constant should contain all expected columns."""
+        expected = {"status", "artifact_path", "current_step", "versions",
+                     "test_results", "error_message", "eta_seconds",
+                     "proxy", "forwarding_method", "plugins", "login_wait_timeout"}
+        assert expected.issubset(db.ALLOWED_UPDATE_COLUMNS)
+
+
+# ---------------------------------------------------------------------------
+# 10. migrate
+# ---------------------------------------------------------------------------
+
+class TestMigrate:
+    """Tests for the migrate() function."""
+
+    def test_migrate_creates_table(self, tmp_path):
+        """migrate() should create the jobs table."""
+        db_path = tmp_path / "test_migrate.db"
+        db.migrate(db_path)
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='jobs'")
+        assert cursor.fetchone() is not None
+        conn.close()
+
+    def test_migrate_is_idempotent(self, tmp_path):
+        """Calling migrate() twice should not raise."""
+        db_path = tmp_path / "test_migrate.db"
+        db.migrate(db_path)
+        db.migrate(db_path)  # Should not raise
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.execute("SELECT COUNT(*) FROM jobs")
+        assert cursor.fetchone()[0] == 0
+        conn.close()
+
+    def test_migrate_creates_parent_directory(self, tmp_path):
+        """migrate() should create parent directories if they don't exist."""
+        db_path = tmp_path / "nested" / "dir" / "migrate.db"
+        assert not db_path.parent.exists()
+        db.migrate(db_path)
+        assert db_path.parent.exists()
+
+
+# ---------------------------------------------------------------------------
+# 11. create_job direct return
+# ---------------------------------------------------------------------------
+
+class TestCreateJobDirectReturn:
+    """Tests for create_job() returning data without a second DB call."""
+
+    def test_create_job_returns_correct_values(self, patched_db):
+        """create_job() should return the inserted values directly."""
+        result = db.create_job(
+            repo_url="https://github.com/foo/bar",
+            ref="develop",
+            owner="quozl",
+            commit_hash="def456abc123",
+            versions=["1.21.8", "1.21.7"],
+            proxy="velocity",
+            forwarding_method="modern",
+            plugins=["plugin1", "plugin2"],
+            login_wait_timeout=60,
+        )
+        assert result["repo_url"] == "https://github.com/foo/bar"
+        assert result["ref"] == "develop"
+        assert result["owner"] == "quozl"
+        assert result["commit_hash"] == "def456abc123"
+        assert result["status"] == "queued"
+        assert result["versions"] == ["1.21.8", "1.21.7"]
+        assert result["proxy"] == "velocity"
+        assert result["forwarding_method"] == "modern"
+        assert result["plugins"] == ["plugin1", "plugin2"]
+        assert result["login_wait_timeout"] == 60
+        assert result["test_results"] == {}
+        assert result["artifact_path"] is None
+
+    def test_create_job_legacy_plugin_conversion(self, patched_db):
+        """Legacy 'plugin' parameter should be converted to 'plugins' list."""
+        result = db.create_job(
+            repo_url="https://github.com/foo/bar",
+            ref="main",
+            owner="foo",
+            commit_hash="abc123def456",
+            versions=["3.10"],
+            plugin="legacy_plugin",
+        )
+        assert result["plugins"] == ["legacy_plugin"]

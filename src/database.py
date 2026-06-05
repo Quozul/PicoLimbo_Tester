@@ -11,15 +11,30 @@ from . import config
 
 DB_PATH = config.DB_PATH
 
+# Allowed column names for update_job() — prevents SQL injection
+ALLOWED_UPDATE_COLUMNS: frozenset[str] = frozenset({
+    "status", "artifact_path", "current_step", "versions",
+    "test_results", "error_message", "eta_seconds",
+    "proxy", "forwarding_method", "plugins", "login_wait_timeout",
+    "created_at", "updated_at",
+})
 
-def _ensure_db() -> None:
-    """Ensure the database directory and schema exist.
 
-    Adds the proxy column if the table exists but the column is missing
-    (migration for existing databases).
+def migrate(db_path: Path | None = None) -> None:
+    """Run schema migrations on the database.
+
+    This function should be called once at application startup.
+    It is idempotent — safe to call multiple times.
+
+    Parameters
+    ----------
+    db_path : Path, optional
+        Path to the database file. Defaults to config.DB_PATH.
     """
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(str(DB_PATH)) as conn:
+    path = db_path or DB_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(str(path)) as conn:
+        # Create the table if it doesn't exist
         conn.execute("""
             CREATE TABLE IF NOT EXISTS jobs (
                 job_id TEXT PRIMARY KEY,
@@ -36,19 +51,19 @@ def _ensure_db() -> None:
                 eta_seconds INTEGER,
                 proxy TEXT NOT NULL DEFAULT 'none',
                 forwarding_method TEXT NOT NULL DEFAULT 'modern',
+                plugin TEXT,
                 plugins TEXT,
                 login_wait_timeout INTEGER NOT NULL DEFAULT 30,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
         """)
-        # Migration: add proxy column to existing tables that don't have it
+        # Migration: add proxy column
         try:
             conn.execute("ALTER TABLE jobs ADD COLUMN proxy TEXT NOT NULL DEFAULT 'none'")
         except sqlite3.OperationalError:
-            # Column already exists
             pass
-        # Migration: add forwarding columns
+        # Migration: add forwarding_method column
         try:
             conn.execute("ALTER TABLE jobs ADD COLUMN forwarding_method TEXT NOT NULL DEFAULT 'modern'")
         except sqlite3.OperationalError:
@@ -57,9 +72,8 @@ def _ensure_db() -> None:
         try:
             conn.execute("ALTER TABLE jobs ADD COLUMN plugin TEXT")
         except sqlite3.OperationalError:
-            # Column already exists
             pass
-        # Migration: rename plugin to plugins (if plugin exists, plugins doesn't)
+        # Migration: add plugins column
         try:
             conn.execute("ALTER TABLE jobs ADD COLUMN plugins TEXT")
         except sqlite3.OperationalError:
@@ -70,6 +84,14 @@ def _ensure_db() -> None:
         except sqlite3.OperationalError:
             pass
         conn.commit()
+
+
+def _ensure_db() -> None:
+    """Ensure the database directory and schema exist.
+
+    Calls migrate() for schema creation, then sets up WAL mode.
+    """
+    migrate()
 
 
 @contextmanager
@@ -103,13 +125,10 @@ def create_job(
 ) -> dict:
     """Create a new job. Raises sqlite3.IntegrityError if duplicate.
 
-    Args:
-        plugin: Single plugin name (legacy, deprecated, use plugins instead).
-        plugins: List of plugin names (new standard).
+    Returns the job dict with all fields populated (no second DB call).
     """
     now = _now_iso()
     job_id = _generate_job_id()
-    # Legacy: if single plugin provided but not list, convert
     if plugins is None and plugin is not None:
         plugins = [plugin]
     plugins_json = json.dumps(plugins) if plugins else None
@@ -122,7 +141,27 @@ def create_job(
             (job_id, repo_url, ref, owner, commit_hash, json.dumps(versions), proxy, forwarding_method, plugins_json, login_wait_timeout, now, now),
         )
         conn.commit()
-    return get_job_by_id(job_id)
+    # Return the data directly instead of re-fetching
+    return {
+        "job_id": job_id,
+        "repo_url": repo_url,
+        "ref": ref,
+        "owner": owner,
+        "commit_hash": commit_hash,
+        "status": "queued",
+        "artifact_path": None,
+        "current_step": None,
+        "versions": versions,
+        "test_results": {},
+        "error_message": None,
+        "eta_seconds": None,
+        "proxy": proxy,
+        "forwarding_method": forwarding_method,
+        "plugins": plugins or [],
+        "login_wait_timeout": login_wait_timeout,
+        "created_at": now,
+        "updated_at": now,
+    }
 
 
 def get_job_by_id(job_id: str) -> Optional[dict]:
@@ -178,9 +217,21 @@ def get_latest_test_results_for_commit(commit_hash: str) -> Optional[dict]:
 
 
 def update_job(job_id: str, **fields) -> Optional[dict]:
-    """Update job fields. Returns updated job or None if not found."""
+    """Update job fields. Returns updated job or None if not found.
+
+    Raises
+    ------
+    ValueError
+        If any field name is not an allowed column.
+    """
     if not fields:
         return get_job_by_id(job_id)
+    for key in fields:
+        if key not in ALLOWED_UPDATE_COLUMNS:
+            raise ValueError(
+                f"Invalid column '{key}' for update_job. "
+                f"Allowed: {sorted(ALLOWED_UPDATE_COLUMNS)}"
+            )
     fields["updated_at"] = _now_iso()
     set_clause = ", ".join(f"{k} = ?" for k in fields)
     values = list(fields.values()) + [job_id]
@@ -228,12 +279,9 @@ def list_jobs(status: Optional[str] = None, limit: int = 100) -> list[dict]:
 
 
 def _row_to_dict(row: sqlite3.Row) -> dict:
-    """Convert a database row to a job dict.
-
-    The proxy column was added by schema migration; if the column
-    doesn't exist (old database) we fall back to the default.
-    """
-    result = {
+    """Convert a database row to a job dict."""
+    cols = row.keys()
+    return {
         "job_id": row["job_id"],
         "status": row["status"],
         "repo_url": row["repo_url"],
@@ -248,34 +296,11 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
         "eta_seconds": row["eta_seconds"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
+        "proxy": row["proxy"] if "proxy" in cols else "none",
+        "forwarding_method": row["forwarding_method"] if "forwarding_method" in cols else "modern",
+        "plugins": json.loads(row["plugins"]) if "plugins" in cols and row["plugins"] else [],
+        "login_wait_timeout": row["login_wait_timeout"] if "login_wait_timeout" in cols else 30,
     }
-    # Read proxy if the column exists (added by schema migration)
-    try:
-        result["proxy"] = row["proxy"]
-    except KeyError:
-        result["proxy"] = "none"
-    # Read forwarding_method
-    try:
-        result["forwarding_method"] = row["forwarding_method"]
-    except KeyError:
-        result["forwarding_method"] = "modern"
-    # Read plugins
-    try:
-        raw = row["plugins"]
-        result["plugins"] = json.loads(raw) if raw else []
-    except KeyError:
-        # Legacy: fall back to single plugin column
-        try:
-            raw_plugin = row["plugin"]
-            result["plugins"] = [raw_plugin] if raw_plugin else []
-        except KeyError:
-            result["plugins"] = []
-    # Read login_wait_timeout
-    try:
-        result["login_wait_timeout"] = row["login_wait_timeout"]
-    except KeyError:
-        result["login_wait_timeout"] = 30
-    return result
 
 
 def _generate_job_id() -> str:
