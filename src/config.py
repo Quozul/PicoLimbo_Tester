@@ -30,6 +30,10 @@ PROXY_CACHE_DIR = Path("/app/cache/proxies")
 # Directory containing plugin JAR files to be copied into the proxy's plugins/ folder
 PLUGINS_DIR = Path("/app/plugins")
 
+# Directory for embedded web UI static assets
+_SRC_DIR = Path(__file__).resolve().parent
+WEBUI_DIR = _SRC_DIR.parent / "webui-dist"
+
 # SQLite database path for job persistence
 DB_PATH = Path("/app/builds/jobs.db")
 
@@ -160,6 +164,7 @@ class Config:
         screenshots_dir: Path | None = None,
         proxy_cache_dir: Path | None = None,
         plugins_dir: Path | None = None,
+        webui_dir: Path | None = None,
         db_path: Path | None = None,
         server_address: str | None = None,
         pico_limbo_internal_port: int | None = None,
@@ -190,6 +195,7 @@ class Config:
         self._screenshots_dir = screenshots_dir or SCREENSHOTS_DIR
         self._proxy_cache_dir = proxy_cache_dir or PROXY_CACHE_DIR
         self._plugins_dir = plugins_dir or PLUGINS_DIR
+        self._webui_dir = webui_dir or WEBUI_DIR
         self._db_path = db_path or DB_PATH
         self._server_address = server_address or SERVER_ADDRESS
         self._pico_limbo_internal_port = pico_limbo_internal_port or PICO_LIMBO_INTERNAL_PORT
@@ -236,6 +242,10 @@ class Config:
     @property
     def plugins_dir(self) -> Path:
         return self._plugins_dir
+
+    @property
+    def webui_dir(self) -> Path:
+        return self._webui_dir
 
     @property
     def db_path(self) -> Path:

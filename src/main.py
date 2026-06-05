@@ -32,8 +32,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Start the build queue worker on startup
-app.state.queue_thread = worker.start_queue_worker()
+@app.on_event("startup")
+def _startup_queue_worker() -> None:
+    """Start the build queue worker on application startup."""
+    app.state.queue_thread = worker.start_queue_worker()
+    logger.info("Build queue worker started")
 
 
 @app.get("/health")
@@ -150,8 +153,11 @@ def get_screenshot(job_id: str, screenshot_id: str):
     if not screenshot_path.exists():
         raise HTTPException(status_code=404, detail="Screenshot file not found on disk")
 
-    screenshot_data = screenshot_path.read_bytes()
-    return Response(content=screenshot_data, media_type="image/png")
+    return FileResponse(
+        path=str(screenshot_path),
+        media_type="image/png",
+        filename=f"screenshot_{screenshot_id}.png",
+    )
 
 
 @app.get(
@@ -193,12 +199,10 @@ def list_jobs(
 
 # ─── Plugin Endpoints ────────────────────────────────────────────────────────
 
-PLUGINS_DIR = config.PLUGINS_DIR
-
 
 def _ensure_plugins_dir() -> None:
     """Ensure the plugins directory exists."""
-    PLUGINS_DIR.mkdir(parents=True, exist_ok=True)
+    config.PLUGINS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @app.post(
@@ -219,7 +223,7 @@ async def upload_plugin(plugin: UploadFile = File(...)):
             detail="Only .jar files are allowed",
         )
 
-    file_path = PLUGINS_DIR / plugin.filename
+    file_path = config.PLUGINS_DIR / plugin.filename
 
     # Read and save the file
     content = await plugin.read()
@@ -237,7 +241,7 @@ def list_plugins():
     _ensure_plugins_dir()
 
     plugins = []
-    for path in sorted(PLUGINS_DIR.iterdir()):
+    for path in sorted(config.PLUGINS_DIR.iterdir()):
         if path.is_file() and path.suffix == ".jar":
             plugins.append({"name": path.name, "status": "ready"})
 
@@ -254,7 +258,7 @@ def delete_plugin(name: str):
     Returns 404 if the plugin does not exist.
     """
     safe_name = Path(name).name  # Sanitize against path traversal
-    file_path = PLUGINS_DIR / safe_name
+    file_path = config.PLUGINS_DIR / safe_name
 
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Plugin not found")
@@ -268,16 +272,14 @@ def delete_plugin(name: str):
 
 # ─── Serve embedded webui ──────────────────────────────────────────────────────
 
-WEBUI_DIR = Path(__file__).parent.parent / "webui-dist"
-
 # Serve static assets (JS, CSS, fonts)
-app.mount("/assets", StaticFiles(directory=str(WEBUI_DIR / "assets")), name="assets")
+app.mount("/assets", StaticFiles(directory=str(config.WEBUI_DIR / "assets")), name="assets")
 
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def serve_favicon():
     """Serve the Vite favicon."""
-    favicon = WEBUI_DIR / "vite.svg"
+    favicon = config.WEBUI_DIR / "vite.svg"
     if favicon.exists():
         return FileResponse(str(favicon), media_type="image/svg+xml")
     return Response(status_code=404)
@@ -291,12 +293,12 @@ async def serve_frontend(full_path: str):
         return Response(status_code=404)
 
     # Serve exact files if they exist (for assets loaded by the SPA)
-    file_path = WEBUI_DIR / full_path
+    file_path = config.WEBUI_DIR / full_path
     if file_path.exists() and file_path.is_file():
         return FileResponse(str(file_path))
 
     # Fall back to index.html for SPA routing
-    index_path = WEBUI_DIR / "index.html"
+    index_path = config.WEBUI_DIR / "index.html"
     if index_path.exists():
         return FileResponse(str(index_path), media_type="text/html")
     return Response(status_code=404, content="Not found")

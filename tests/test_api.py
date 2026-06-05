@@ -9,82 +9,23 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-
-# ---------------------------------------------------------------------------
-# Mock dependencies BEFORE importing src.main
-# ---------------------------------------------------------------------------
-
-# Mock the database module so startup doesn't touch /app/builds
-mock_database = MagicMock()
-mock_engine = MagicMock()
-mock_job_runner = MagicMock()
-mock_worker = MagicMock()
-
-sys_modules_backup = {}
-
-
-def _patch_modules():
-    global sys_modules_backup
-    import sys
-
-    sys_modules_backup = {
-        "src.database": sys.modules.get("src.database"),
-        "src.builder.engine": sys.modules.get("src.builder.engine"),
-        "src.builder.worker": sys.modules.get("src.builder.worker"),
-        "src.orchestration.job_runner": sys.modules.get("src.orchestration.job_runner"),
-        "src.main": sys.modules.get("src.main"),
-    }
-
-    import sys
-
-    sys.modules["src.database"] = mock_database
-    sys.modules["src.builder.engine"] = mock_engine
-    sys.modules["src.builder.worker"] = mock_worker
-    sys.modules["src.orchestration.job_runner"] = mock_job_runner
-
-
-def _unpatch_modules():
-    import sys
-
-    for name, old in sys_modules_backup.items():
-        if old is not None:
-            sys.modules[name] = old
-        else:
-            sys.modules.pop(name, None)
-
-
-_patch_modules()
-
-# Now import the app (side effects are mocked)
-from src.main import app  # noqa: E402
-
-# Restore for clean state between tests (re-import with mocks each time)
-_unpatch_modules()
+from src.main import app
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
-@pytest.fixture(autouse=True)
-def reset_mocks():
-    """Reset all mock state before each test."""
-    mock_database.reset_mock()
-    mock_engine.reset_mock()
-    mock_job_runner.reset_mock()
-    mock_worker.reset_mock()
-
-
 @pytest.fixture
-def client():
-    """Create a TestClient for the FastAPI app."""
-    # Re-patch modules so the app sees our mocks
-    _patch_modules()
-    try:
-        with TestClient(app) as c:
-            yield c
-    finally:
-        _unpatch_modules()
+def client(mock_database, mock_engine, mock_job_runner, mock_worker):
+    """Create a TestClient for the FastAPI app with mocked dependencies."""
+    import src.main as main_mod
+    with patch.object(main_mod, "database", mock_database):
+        with patch.object(main_mod, "engine", mock_engine):
+            with patch.object(main_mod, "job_runner", mock_job_runner):
+                with patch.object(main_mod, "worker", mock_worker):
+                    with TestClient(app) as c:
+                        yield c
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +83,7 @@ class TestHealthCheck:
 
 class TestCreateJob:
 
-    def test_returns_201_with_job_info(self, client):
+    def test_returns_201_with_job_info(self, client, mock_engine):
         job = _make_job(
             job_id="job-1",
             status="queued",
@@ -169,7 +110,7 @@ class TestCreateJob:
         assert data["owner"] == "Quozul"
         assert data["commit_hash"] == "abc123"
 
-    def test_uses_default_values_when_body_empty(self, client):
+    def test_uses_default_values_when_body_empty(self, client, mock_engine):
         job = _make_job(job_id="job-2")
         mock_engine.create_job.return_value = job
 
@@ -180,7 +121,7 @@ class TestCreateJob:
         assert data["repo_url"] == "https://github.com/Quozul/PicoLimbo.git"
         assert data["ref"] == "master"
 
-    def test_returns_400_on_value_error(self, client):
+    def test_returns_400_on_value_error(self, client, mock_engine):
         mock_engine.create_job.side_effect = ValueError("bad url")
 
         resp = client.post(
@@ -191,7 +132,7 @@ class TestCreateJob:
         assert resp.status_code == 400
         assert resp.json()["detail"] == "bad url"
 
-    def test_returns_500_on_unexpected_exception(self, client):
+    def test_returns_500_on_unexpected_exception(self, client, mock_engine):
         mock_engine.create_job.side_effect = RuntimeError("boom")
 
         resp = client.post(
@@ -209,7 +150,7 @@ class TestCreateJob:
 
 class TestGetJob:
 
-    def test_returns_200_with_job_info(self, client):
+    def test_returns_200_with_job_info(self, client, mock_database, mock_job_runner):
         job = _make_job(
             job_id="job-1",
             status="finished",
@@ -237,7 +178,7 @@ class TestGetJob:
         assert data["test_results"]["1.20"]["version"] == "1.20"
         assert data["test_results"]["1.20"]["passed"] is True
 
-    def test_returns_404_when_job_not_found(self, client):
+    def test_returns_404_when_job_not_found(self, client, mock_database):
         mock_database.get_job_by_id.return_value = None
 
         resp = client.get("/jobs/nonexistent")
@@ -245,7 +186,7 @@ class TestGetJob:
         assert resp.status_code == 404
         assert resp.json()["detail"] == "Job not found"
 
-    def test_eta_seconds_computed_when_testing(self, client):
+    def test_eta_seconds_computed_when_testing(self, client, mock_database, mock_job_runner):
         job = _make_job(job_id="job-1", status="testing")
         mock_database.get_job_by_id.return_value = job
         mock_job_runner._compute_eta.return_value = 15
@@ -255,7 +196,7 @@ class TestGetJob:
         assert resp.status_code == 200
         assert resp.json()["eta_seconds"] == 15
 
-    def test_eta_seconds_none_when_not_testing(self, client):
+    def test_eta_seconds_none_when_not_testing(self, client, mock_database, mock_job_runner):
         job = _make_job(job_id="job-1", status="finished")
         mock_database.get_job_by_id.return_value = job
         mock_job_runner._compute_eta.return_value = 42
@@ -272,7 +213,7 @@ class TestGetJob:
 
 class TestGetArtifact:
 
-    def test_returns_file_response_when_artifact_exists(self, client):
+    def test_returns_file_response_when_artifact_exists(self, client, mock_engine):
         # Create a real temporary file so FileResponse can stat it
         fd, tmp_path = tempfile.mkstemp(prefix="pico_limbo_")
         os.close(fd)
@@ -290,7 +231,7 @@ class TestGetArtifact:
         finally:
             os.unlink(tmp_path)
 
-    def test_returns_404_when_engine_returns_none(self, client):
+    def test_returns_404_when_engine_returns_none(self, client, mock_engine):
         mock_engine.get_artifact_file.return_value = None
 
         resp = client.get("/jobs/job-1/artifact")
@@ -298,7 +239,7 @@ class TestGetArtifact:
         assert resp.status_code == 404
         assert resp.json()["detail"] == "Artifact not found"
 
-    def test_returns_404_when_artifact_file_not_on_disk(self, client):
+    def test_returns_404_when_artifact_file_not_on_disk(self, client, mock_engine):
         mock_path = MagicMock()
         mock_path.exists.return_value = False
         mock_path.__str__ = lambda s: "/tmp/pico_limbo"
@@ -312,14 +253,12 @@ class TestGetArtifact:
 
 
 # ===========================================================================
-# GET /jobs/{job_id}/screenshots
-# ===========================================================================
 # GET /jobs/{job_id}/screenshots/{screenshot_id}
 # ===========================================================================
 
 class TestGetScreenshot:
 
-    def test_returns_inline_image_when_screenshot_exists(self, client):
+    def test_returns_inline_image_when_screenshot_exists(self, client, mock_database):
         fd, tmp_path = tempfile.mkstemp(suffix=".png", prefix="snap_")
         os.close(fd)
         try:
@@ -343,7 +282,7 @@ class TestGetScreenshot:
         finally:
             os.unlink(tmp_path)
 
-    def test_returns_404_when_job_not_found(self, client):
+    def test_returns_404_when_job_not_found(self, client, mock_database):
         mock_database.get_job_by_id.return_value = None
 
         resp = client.get("/jobs/nonexistent/screenshots/1.20")
@@ -351,7 +290,7 @@ class TestGetScreenshot:
         assert resp.status_code == 404
         assert resp.json()["detail"] == "Job not found"
 
-    def test_returns_404_when_screenshot_id_not_in_test_results(self, client):
+    def test_returns_404_when_screenshot_id_not_in_test_results(self, client, mock_database):
         job = _make_job(
             job_id="job-1",
             status="finished",
@@ -370,7 +309,7 @@ class TestGetScreenshot:
         assert resp.status_code == 404
         assert resp.json()["detail"] == "Screenshot not found"
 
-    def test_returns_404_when_screenshot_path_is_none(self, client):
+    def test_returns_404_when_screenshot_path_is_none(self, client, mock_database):
         job = _make_job(
             job_id="job-1",
             status="finished",
@@ -389,7 +328,7 @@ class TestGetScreenshot:
         assert resp.status_code == 404
         assert resp.json()["detail"] == "Screenshot not found"
 
-    def test_returns_404_when_screenshot_file_not_on_disk(self, client):
+    def test_returns_404_when_screenshot_file_not_on_disk(self, client, mock_database):
         job = _make_job(
             job_id="job-1",
             status="finished",
@@ -420,7 +359,7 @@ class TestGetScreenshot:
 
 class TestListJobs:
 
-    def test_returns_200_with_list_of_jobs(self, client):
+    def test_returns_200_with_list_of_jobs(self, client, mock_database, mock_job_runner):
         jobs = [
             _make_job(job_id="job-1", status="finished"),
             _make_job(job_id="job-2", status="queued"),
@@ -436,7 +375,7 @@ class TestListJobs:
         assert data[0]["job_id"] == "job-1"
         assert data[1]["job_id"] == "job-2"
 
-    def test_filters_by_status(self, client):
+    def test_filters_by_status(self, client, mock_database, mock_job_runner):
         all_jobs = [
             _make_job(job_id="job-1", status="finished"),
             _make_job(job_id="job-2", status="queued"),
@@ -459,7 +398,7 @@ class TestListJobs:
         assert len(data) == 2
         assert all(j["status"] == "queued" for j in data)
 
-    def test_respects_limit(self, client):
+    def test_respects_limit(self, client, mock_database, mock_job_runner):
         all_jobs = [_make_job(job_id=f"job-{i}") for i in range(10)]
 
         def list_jobs_side_effect(status=None, limit=100):
@@ -473,7 +412,7 @@ class TestListJobs:
         assert resp.status_code == 200
         assert len(resp.json()) == 3
 
-    def test_each_job_includes_eta_seconds(self, client):
+    def test_each_job_includes_eta_seconds(self, client, mock_database, mock_job_runner):
         jobs = [_make_job(job_id="job-1", status="testing")]
         mock_database.list_jobs.return_value = jobs
         mock_job_runner._compute_eta.return_value = 25
@@ -490,7 +429,7 @@ class TestListJobs:
 
 class TestRetryJob:
 
-    def test_retries_finished_job(self, client):
+    def test_retries_finished_job(self, client, mock_database):
         job = _make_job(job_id="job-1", status="finished")
         updated = _make_job(job_id="job-1", status="queued", current_step=None)
         mock_database.get_job_by_id.return_value = job
@@ -503,7 +442,7 @@ class TestRetryJob:
         assert data["status"] == "queued"
         assert data["current_step"] is None
 
-    def test_retries_failed_job(self, client):
+    def test_retries_failed_job(self, client, mock_database):
         job = _make_job(job_id="job-1", status="failed")
         updated = _make_job(job_id="job-1", status="queued", current_step=None)
         mock_database.get_job_by_id.return_value = job
@@ -514,7 +453,7 @@ class TestRetryJob:
         assert resp.status_code == 200
         assert resp.json()["status"] == "queued"
 
-    def test_returns_400_when_job_is_queued(self, client):
+    def test_returns_400_when_job_is_queued(self, client, mock_database):
         job = _make_job(job_id="job-1", status="queued")
         mock_database.get_job_by_id.return_value = job
 
@@ -523,7 +462,7 @@ class TestRetryJob:
         assert resp.status_code == 400
         assert resp.json()["detail"] == "Cannot retry job with status 'queued'"
 
-    def test_returns_400_when_job_is_building(self, client):
+    def test_returns_400_when_job_is_building(self, client, mock_database):
         job = _make_job(job_id="job-1", status="building")
         mock_database.get_job_by_id.return_value = job
 
@@ -532,7 +471,7 @@ class TestRetryJob:
         assert resp.status_code == 400
         assert resp.json()["detail"] == "Cannot retry job with status 'building'"
 
-    def test_returns_400_when_job_is_testing(self, client):
+    def test_returns_400_when_job_is_testing(self, client, mock_database):
         job = _make_job(job_id="job-1", status="testing")
         mock_database.get_job_by_id.return_value = job
 
@@ -541,7 +480,7 @@ class TestRetryJob:
         assert resp.status_code == 400
         assert resp.json()["detail"] == "Cannot retry job with status 'testing'"
 
-    def test_returns_404_when_job_not_found(self, client):
+    def test_returns_404_when_job_not_found(self, client, mock_database):
         mock_database.get_job_by_id.return_value = None
 
         resp = client.post("/jobs/nonexistent/retry")

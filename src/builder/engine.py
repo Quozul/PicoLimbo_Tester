@@ -17,8 +17,6 @@ from ..infrastructure.artifact_storage import ArtifactStorage
 
 logger = logging.getLogger(__name__)
 
-BUILDS_DIR = config.BUILDS_DIR
-
 # GitHub URL pattern: https://github.com/{owner}/{repo} (with or without .git)
 GITHUB_URL_RE = re.compile(
     r"^https://github\.com/([^/]+)/([^/]+)(?:\.git)?$"
