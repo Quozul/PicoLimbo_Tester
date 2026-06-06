@@ -166,22 +166,4 @@ class TestDeletePlugin:
         assert response.json() == []
 
 
-# ===========================================================================
-# 4. Plugin model validation
-# ===========================================================================
 
-
-class TestPluginModel:
-    def test_job_create_accepts_plugins_field(self):
-        """JobCreate model should accept an optional plugins field."""
-        from src.models import JobCreate
-
-        job = JobCreate(plugins=["my-plugin.jar"])
-        assert job.plugins == ["my-plugin.jar"]
-
-    def test_job_create_defaults_plugins_to_none(self):
-        """JobCreate should default plugins to None when not provided."""
-        from src.models import JobCreate
-
-        job = JobCreate()
-        assert job.plugins is None

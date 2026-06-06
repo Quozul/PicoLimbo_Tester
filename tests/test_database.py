@@ -46,29 +46,25 @@ def _setup_test_db(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-# Module-level holder so nested closures always reference the same object.
-class _ConnHolder:
-    conn: sqlite3.Connection | None = None
-
-
 @pytest.fixture
-def patched_db():
-    """Patch DB_PATH, _ensure_db, and get_connection to use an in-memory DB.
+def patched_db(tmp_path):
+    """Use a temporary file-based DB for each test.
 
-    Each test gets its own isolated in-memory database via a shared connection.
+    Each test gets its own isolated database via a temporary file.
     """
-    _ConnHolder.conn = sqlite3.connect(":memory:")
-    _ConnHolder.conn.row_factory = sqlite3.Row
-    _setup_test_db(_ConnHolder.conn)
+    db_file = tmp_path / "test.db"
 
     @contextlib.contextmanager
     def fake_get_connection():
-        yield _ConnHolder.conn
+        with sqlite3.connect(str(db_file)) as conn:
+            conn.row_factory = sqlite3.Row
+            _setup_test_db(conn)
+            yield conn
 
-    with patch.object(db, "DB_PATH", ":memory:"):
+    with patch.object(db, "DB_PATH", str(db_file)):
         with patch.object(db, "_ensure_db", lambda: None):
             with patch.object(db, "get_connection", fake_get_connection):
-                yield ":memory:"
+                yield str(db_file)
 
 
 # ---------------------------------------------------------------------------

@@ -10,21 +10,6 @@ from src.builder import engine
 
 
 # ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _make_path_mock(spec=Path):
-    """Create a MagicMock that behaves like a Path for /-chaining.
-
-    Every __truediv__ call returns the same mock, so
-    mock / "a" / "b" / "c" is always the same object.
-    """
-    m = MagicMock(spec=spec)
-    m.__truediv__ = MagicMock(return_value=m)
-    return m
-
-
-# ---------------------------------------------------------------------------
 # 1. extract_owner_from_url
 # ---------------------------------------------------------------------------
 

@@ -17,15 +17,25 @@ from src.main import app
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def client(mock_database, mock_engine, mock_job_runner, mock_worker):
+def client(mock_database, mock_engine, mock_job_runner, mock_worker, tmp_path):
     """Create a TestClient for the FastAPI app with mocked dependencies."""
     import src.main as main_mod
+
+    # Set up a default WEBUI_DIR with index.html for frontend tests
+    webui_dir = tmp_path / "webui-dist"
+    webui_dir.mkdir()
+    (webui_dir / "index.html").write_text("<html></html>")
+
     with patch.object(main_mod, "database", mock_database):
         with patch.object(main_mod, "engine", mock_engine):
             with patch.object(main_mod, "job_runner", mock_job_runner):
                 with patch.object(main_mod, "worker", mock_worker):
-                    with TestClient(app) as c:
-                        yield c
+                    with patch.object(main_mod, "config") as mock_config:
+                        mock_config.WEBUI_DIR = webui_dir
+                        with TestClient(app) as c:
+                            yield c
+                            # Reset the mock config after each test to prevent state leakage
+                            mock_config.reset_mock()
 
 
 # ---------------------------------------------------------------------------
@@ -487,3 +497,66 @@ class TestRetryJob:
 
         assert resp.status_code == 404
         assert resp.json()["detail"] == "Job not found"
+
+
+# ===========================================================================
+# GET /{full_path:path} — frontend catch-all route
+# ===========================================================================
+
+
+class TestFrontendCatchAll:
+    """Tests for the frontend catch-all route in main.py."""
+
+    def test_serves_index_html_when_file_exists(self, client, mock_database, mock_engine, mock_job_runner, mock_worker, tmp_path):
+        """When index.html exists in WEBUI_DIR, it should be served."""
+        import src.main as main_mod
+
+        # The client fixture already creates tmp_path / "webui-dist" with index.html
+        # and patches config.WEBUI_DIR. The serve_frontend route reads config.WEBUI_DIR
+        # at runtime, so the patched mock value is used.
+        resp = client.get("/some-spa-route")
+        assert resp.status_code == 200
+        assert "text/html" in resp.headers["content-type"]
+        assert resp.text == "<html></html>"
+
+    def test_returns_404_when_no_index_html(self, client, mock_database, mock_engine, mock_job_runner, mock_worker, tmp_path):
+        """When WEBUI_DIR has no index.html, returns 404."""
+        import src.main as main_mod
+        import tempfile
+
+        # Create a fresh temp dir without index.html
+        fresh_tmp = tempfile.mkdtemp()
+        webui_dir = Path(fresh_tmp) / "webui-dist"
+        webui_dir.mkdir()  # No index.html
+
+        # Reset the mock config and point it to the new dir
+        mock_config = main_mod.config
+        mock_config.reset_mock()
+        mock_config.WEBUI_DIR = webui_dir
+
+        resp = client.get("/some-spa-route")
+        assert resp.status_code == 404
+        assert resp.text == "Not found"
+
+    def test_api_routes_return_404(self, client, mock_database, mock_engine, mock_job_runner, mock_worker, tmp_path):
+        """API routes should not be caught by the frontend catch-all."""
+        # The client fixture already has WEBUI_DIR set up with index.html.
+        # /api/health is not a registered route, so the catch-all returns 404.
+        resp = client.get("/api/health")
+        assert resp.status_code == 404
+        # The catch-all returns a plain 404 Response (no body) for api/ paths
+        assert resp.text == ""
+
+    def test_serves_exact_file_when_exists(self, client, mock_database, mock_engine, mock_job_runner, mock_worker, tmp_path):
+        """When an exact file exists in WEBUI_DIR, it should be served."""
+        import src.main as main_mod
+
+        # The /assets path is handled by StaticFiles mount (configured at module load).
+        # Use a non-/assets path to test serve_frontend's exact-file serving.
+        webui_dir = tmp_path / "webui-dist"
+        (webui_dir / "subdir").mkdir()
+        (webui_dir / "subdir" / "app.js").write_text("console.log('hello')")
+
+        resp = client.get("/subdir/app.js")
+        assert resp.status_code == 200
+        assert resp.text == "console.log('hello')"
