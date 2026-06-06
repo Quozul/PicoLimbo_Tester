@@ -148,7 +148,6 @@ class TestCaptureScreenshot:
             result_path = capture_screenshot(
                 version="1.20.1",
                 commit_hash="aabbccdd11223344",
-                window_id="fake_window",
                 screenshots_dir=screenshots_dir,
             )
 
@@ -175,7 +174,6 @@ class TestCaptureScreenshot:
             result_path = capture_screenshot(
                 version="1.20.1",
                 commit_hash="aabbccdd11223344",
-                window_id="fake_window",
                 screenshots_dir="/tmp/screenshots",
             )
 
@@ -197,7 +195,6 @@ class TestCaptureScreenshot:
                 capture_screenshot(
                     version="1.19.3",
                     commit_hash="deadbeef",
-                    window_id="fake_window",
                     screenshots_dir=screenshots_dir,
                 )
 
@@ -219,7 +216,6 @@ class TestCaptureScreenshot:
             result_path = capture_screenshot(
                 version="26.1.1",
                 commit_hash="abcdef1234567890abcdef1234567890abcdef12",
-                window_id="fake_window",
                 screenshots_dir=screenshots_dir,
             )
 
