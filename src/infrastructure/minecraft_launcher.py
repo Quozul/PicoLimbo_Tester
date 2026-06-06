@@ -8,21 +8,8 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import minecraft_launcher_lib
-
-if TYPE_CHECKING:
-    from typing import Protocol
-
-    class MinecraftLauncherProtocol(Protocol):
-        """Protocol for MinecraftLauncher used by other modules."""
-
-        def get_command(self, version: str) -> list[str]:
-            ...
-
-        def start(self, version: str) -> subprocess.Popen:
-            ...
 
 
 class MinecraftLauncher:

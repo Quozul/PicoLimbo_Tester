@@ -8,11 +8,9 @@ functions for backward compatibility. All logic is delegated to
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Optional
 
 from .. import config
-from .. import database
 from ..di import (
     get_artifact_repo,
     get_build_service,

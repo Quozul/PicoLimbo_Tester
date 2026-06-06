@@ -30,8 +30,6 @@ _proxy_factory = MyMockProxyFactory()
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from . import config
 from .application.build_service import BuildService
 from .infrastructure.artifact_repository import ArtifactRepository

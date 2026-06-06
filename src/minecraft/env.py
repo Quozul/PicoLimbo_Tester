@@ -9,7 +9,6 @@ import os
 from typing import List
 
 from nbtlib import File, List as NbtList, Compound, String, Byte
-from .. import config
 from ..versions import Version, VersionSupport
 
 logger = logging.getLogger(__name__)
@@ -92,7 +91,7 @@ def create_servers_dat(
 
 # -- Public API for injection-based usage -----------------------------------
 
-from ..infrastructure.config_writer import ConfigWriter, ServerEntry
+from ..infrastructure.config_writer import ConfigWriter
 
 # Shared instance for direct use
 config_writer = ConfigWriter()

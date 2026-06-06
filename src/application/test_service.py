@@ -10,25 +10,12 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
-
 from src.domain.value_objects import TestResult, Version
 from src.infrastructure.minecraft_launcher import MinecraftLauncher
 from src.infrastructure.screen_region import ScreenRegionMatcher
 from src.infrastructure.window_manager import WindowManager
 from src.minecraft.input import VirtualInputController
 from src.versions import VersionSupport
-
-if TYPE_CHECKING:
-    from PIL import Image as PILImage
-
-    class ImageGrabProtocol:
-        """Protocol for pyscreenshot ImageGrab."""
-
-        @staticmethod
-        def grab(bbox: tuple[int, int, int, int] | None = None) -> PILImage.Image:
-            ...
-
 
 __all__ = ["TestService", "TestContext"]
 

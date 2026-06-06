@@ -2,7 +2,6 @@
 
 import logging
 import os
-import pathlib
 import shutil
 import subprocess
 import time
@@ -12,7 +11,6 @@ from ..infrastructure.minecraft_launcher import MinecraftLauncher
 from ..infrastructure.screen_region import ScreenRegionMatcher
 from ..infrastructure.window_manager import WindowManager
 from ..application.test_service import TestService
-from .env import create_servers_dat, create_options_txt
 from .input import VirtualInputController
 from .wait_for import wait_for_screen_region
 from PIL import ImageGrab
@@ -172,7 +170,6 @@ def empty_directory(directory: str) -> None:
 def capture_screenshot(
     version: str,
     commit_hash: str,
-    window_id: str,
     screenshots_dir: str,
 ) -> str:
     # Capture the full screen to avoid any cropping from bbox rounding

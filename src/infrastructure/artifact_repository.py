@@ -11,8 +11,6 @@ from pathlib import Path
 
 import httpx
 
-from .. import config
-
 logger = logging.getLogger(__name__)
 
 

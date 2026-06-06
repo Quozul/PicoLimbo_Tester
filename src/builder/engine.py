@@ -8,9 +8,8 @@ from pathlib import Path
 from typing import Optional
 
 
-from .. import config
 from .. import database
-from ..application.build_service import BuildResult
+from ..application.build_service import BuildResult, BuildService
 from ..di import get_build_service, get_git_repo
 
 logger = logging.getLogger(__name__)

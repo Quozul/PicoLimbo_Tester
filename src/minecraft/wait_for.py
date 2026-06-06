@@ -1,13 +1,8 @@
 """Screen-region waiting utilities — delegates to :class:`ScreenRegionMatcher`."""
 
 import logging
-import os
-import time
 
-from PIL import Image, ImageChops
-import pyscreenshot as ImageGrab
-
-from src.infrastructure.screen_region import ScreenRegionMatcher, VALID_EXTENSIONS
+from src.infrastructure.screen_region import ScreenRegionMatcher
 
 logger = logging.getLogger(__name__)
 

@@ -1,7 +1,7 @@
 """Pydantic models for the PicoLimbo Build API."""
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field
 

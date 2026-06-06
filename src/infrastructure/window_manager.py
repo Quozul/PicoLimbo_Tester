@@ -8,25 +8,6 @@ from __future__ import annotations
 
 import re
 import subprocess
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from typing import Protocol
-
-    class WindowManagerProtocol(Protocol):
-        """Protocol for WindowManager used by other modules."""
-
-        def search_by_name(self, pattern: str) -> str | None:
-            ...
-
-        def search_by_class(self, class_name: str) -> str | None:
-            ...
-
-        def get_geometry(self, window_id: str) -> dict[str, int] | None:
-            ...
-
-        def move_to(self, window_id: str, x: int, y: int) -> None:
-            ...
 
 
 class WindowManager:

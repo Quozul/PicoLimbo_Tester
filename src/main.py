@@ -1,11 +1,10 @@
 """FastAPI application for the PicoLimbo Build API."""
 
 import logging
-import os
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, Form, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles

@@ -157,24 +157,3 @@ class ScreenRegionMatcher:
         debug_path = "current_capture.png"
         image.save(debug_path)
         logger.info("Last captured region saved to %s for inspection.", debug_path)
-
-
-# ---------------------------------------------------------------------------
-# Backwards-compatible module-level function
-# ---------------------------------------------------------------------------
-
-# Keep the old function so existing callers don't break immediately.
-# New code should use ``ScreenRegionMatcher`` directly.
-
-def wait_for_screen_region(
-    reference_images_dir: str,
-    region: tuple[int, int, int, int],
-    timeout: float = 30.0,
-    interval: float = 0.5,
-) -> bool:
-    """Deprecated — use :class:`ScreenRegionMatcher` instead."""
-    matcher = ScreenRegionMatcher(
-        references_dir=reference_images_dir,
-        poll_interval=interval,
-    )
-    return matcher.wait_for_region("deprecated", region, timeout=timeout)

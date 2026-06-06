@@ -25,11 +25,6 @@ from ..proxy.factory import ProxyFactory
 logger = logging.getLogger(__name__)
 
 
-def _now_iso() -> str:
-    """Return the current UTC time as an ISO-8601 string."""
-    return datetime.now(timezone.utc).isoformat()
-
-
 class JobOrchestrator:
     """Orchestrates the full job lifecycle: build → server setup → test → result persistence.
 
