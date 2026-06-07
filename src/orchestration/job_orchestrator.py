@@ -240,7 +240,7 @@ class JobOrchestrator:
 
         os.makedirs(self._screenshots_dir, exist_ok=True)
 
-        from ..minecraft.runner import empty_directory
+        from ..infrastructure.utils import empty_directory
 
         empty_directory(str(self._game_directory / "screenshots"))
 
