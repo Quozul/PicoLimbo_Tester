@@ -226,7 +226,7 @@ class TestService:
         commit_hash: str,
         window_id: str | None,
     ) -> Path | None:
-        """Capture a screenshot of the game.
+        """Capture a full-screen screenshot of the game.
 
         Parameters
         ----------
@@ -245,14 +245,12 @@ class TestService:
         try:
             import pyscreenshot as ImageGrab  # type: ignore[import-not-found]
 
-            bbox = self._get_screenshot_bbox(window_id)
-            if bbox:
-                screenshot = ImageGrab.grab(bbox=bbox)
-                screenshot_dir = self._screenshots_dir / commit_hash[:8]
-                screenshot_dir.mkdir(parents=True, exist_ok=True)
-                screenshot_path = screenshot_dir / f"screenshot_{version}.png"
-                screenshot.save(str(screenshot_path))
-                return screenshot_path
+            screenshot = ImageGrab.grab()
+            screenshot_dir = self._screenshots_dir / commit_hash[:8]
+            screenshot_dir.mkdir(parents=True, exist_ok=True)
+            screenshot_path = screenshot_dir / f"screenshot_{version}.png"
+            screenshot.save(str(screenshot_path))
+            return screenshot_path
         except Exception:
             pass
         return None
@@ -292,29 +290,4 @@ class TestService:
             return CLICK_SERVER_BUTTON_1_7
         return CLICK_SERVER_BUTTON_1_8_PLUS
 
-    def _get_screenshot_bbox(
-        self, window_id: str | None
-    ) -> tuple[int, int, int, int] | None:
-        """Get the screenshot bounding box from window geometry.
 
-        Parameters
-        ----------
-        window_id : str | None
-            Window ID to query.
-
-        Returns
-        -------
-        tuple[int, int, int, int] | None
-            ``(x, y, x + width, y + height)`` or ``None`` if the
-            window geometry cannot be retrieved.
-        """
-        if window_id:
-            geometry = self._wm.get_geometry(window_id)
-            if geometry:
-                return (
-                    geometry["x"],
-                    geometry["y"],
-                    geometry["x"] + geometry["width"],
-                    geometry["y"] + geometry["height"],
-                )
-        return None

@@ -645,68 +645,6 @@ class TestCleanup:
         service._cleanup(None)  # Should not raise
 
 
-# ── _get_screenshot_bbox ──────────────────────────────────────────────────────
-
-
-class TestGetScreenshotBbox:
-    """Tests for the _get_screenshot_bbox() helper method."""
-
-    def test_returns_bbox_from_geometry(self, screenshots_dir):
-        """Get screenshot bbox returns correct bbox from window geometry."""
-        mock_wm = MagicMock()
-        mock_wm.get_geometry.return_value = {
-            "x": 100,
-            "y": 200,
-            "width": 1024,
-            "height": 768,
-        }
-
-        service = TestService(
-            minecraft=MagicMock(),
-            window_manager=mock_wm,
-            screen_matcher=MagicMock(),
-            input_controller=MagicMock(),
-            screenshots_dir=screenshots_dir,
-        )
-
-        bbox = service._get_screenshot_bbox("12345")
-
-        assert bbox == (100, 200, 1124, 968)
-
-    def test_returns_none_for_no_window_id(self, screenshots_dir):
-        """Get screenshot bbox returns None when no window ID."""
-        mock_wm = MagicMock()
-
-        service = TestService(
-            minecraft=MagicMock(),
-            window_manager=mock_wm,
-            screen_matcher=MagicMock(),
-            input_controller=MagicMock(),
-            screenshots_dir=screenshots_dir,
-        )
-
-        bbox = service._get_screenshot_bbox(None)
-
-        assert bbox is None
-
-    def test_returns_none_when_geometry_missing(self, screenshots_dir):
-        """Get screenshot bbox returns None when geometry is None."""
-        mock_wm = MagicMock()
-        mock_wm.get_geometry.return_value = None
-
-        service = TestService(
-            minecraft=MagicMock(),
-            window_manager=mock_wm,
-            screen_matcher=MagicMock(),
-            input_controller=MagicMock(),
-            screenshots_dir=screenshots_dir,
-        )
-
-        bbox = service._get_screenshot_bbox("12345")
-
-        assert bbox is None
-
-
 # ── Integration: test_version end-to-end ──────────────────────────────────────
 
 
