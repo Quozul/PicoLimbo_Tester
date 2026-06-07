@@ -25,7 +25,6 @@ from src.domain.value_objects import (
     RepoUrl,
     Version,
 )
-from src.infrastructure.artifact_repository import ArtifactRepository
 from src.infrastructure.config_writer import ConfigWriter
 
 
@@ -75,14 +74,6 @@ def mock_proxy_manager():
     manager.start.return_value = MagicMock()
     manager.start.return_value.pid = 12345
     return manager
-
-
-@pytest.fixture
-def mock_artifact_repo():
-    """Create a mock artifact repository."""
-    repo = MagicMock(spec=ArtifactRepository)
-    repo.get_cached_or_download.return_value = Path("/tmp/velocity-1.21.8.jar")
-    return repo
 
 
 @pytest.fixture
@@ -178,7 +169,6 @@ class TestServerSetupService:
         mock_job,
         temp_builds_dir,
         mock_proxy_manager,
-        mock_artifact_repo,
         mock_config_writer,
         tmp_path,
     ):
@@ -189,7 +179,7 @@ class TestServerSetupService:
         proxy_factory.create.return_value = mock_proxy_manager
 
         service = ServerSetupService(
-            proxy_factory, mock_config_writer, mock_artifact_repo
+            proxy_factory, mock_config_writer
         )
 
         proxy_dir = tmp_path / "proxy"
@@ -216,11 +206,11 @@ class TestServerSetupService:
             assert ctx.pico_limbo_proc is not None
             assert ctx.proxy is mock_proxy_manager
 
+            # Verify proxy.download_if_needed was called
+            mock_proxy_manager.download_if_needed.assert_called_once()
             # Verify proxy.start was called
             mock_proxy_manager.start.assert_called_once()
-            call_kwargs = mock_proxy_manager.start.call_args
-            assert call_kwargs[1]["jar_path"] == Path("/tmp/velocity-1.21.8.jar")
-            assert call_kwargs[1]["plugins"] == ["test-plugin.jar"]
+            assert mock_proxy_manager.start.call_args[1]["plugins"] == ["test-plugin.jar"]
 
             # Verify config was written
             mock_config_writer.write_servers_dat.assert_called_once()
@@ -234,7 +224,6 @@ class TestServerSetupService:
         mock_job,
         tmp_path,
         mock_proxy_manager,
-        mock_artifact_repo,
         mock_config_writer,
     ):
         """Setup raises RuntimeError when artifact is not found."""
@@ -244,7 +233,7 @@ class TestServerSetupService:
         proxy_factory.create.return_value = mock_proxy_manager
 
         service = ServerSetupService(
-            proxy_factory, mock_config_writer, mock_artifact_repo
+            proxy_factory, mock_config_writer
         )
 
         # builds_dir doesn't contain the expected artifact path
@@ -266,7 +255,6 @@ class TestServerSetupService:
         self,
         mock_job_no_proxy,
         temp_builds_dir,
-        mock_artifact_repo,
         mock_config_writer,
         tmp_path,
     ):
@@ -277,7 +265,7 @@ class TestServerSetupService:
         proxy_factory.create.return_value = None
 
         service = ServerSetupService(
-            proxy_factory, mock_config_writer, mock_artifact_repo
+            proxy_factory, mock_config_writer
         )
 
         proxy_dir = tmp_path / "proxy"
@@ -318,7 +306,6 @@ class TestServerSetupService:
         mock_job,
         temp_builds_dir,
         mock_proxy_manager,
-        mock_artifact_repo,
         mock_config_writer,
         tmp_path,
     ):
@@ -329,7 +316,7 @@ class TestServerSetupService:
         proxy_factory.create.return_value = mock_proxy_manager
 
         service = ServerSetupService(
-            proxy_factory, mock_config_writer, mock_artifact_repo
+            proxy_factory, mock_config_writer
         )
 
         proxy_dir = tmp_path / "proxy"
@@ -370,7 +357,6 @@ class TestServerSetupService:
         mock_job,
         temp_builds_dir,
         mock_proxy_manager,
-        mock_artifact_repo,
         mock_config_writer,
         tmp_path,
     ):
@@ -381,7 +367,7 @@ class TestServerSetupService:
         proxy_factory.create.return_value = mock_proxy_manager
 
         service = ServerSetupService(
-            proxy_factory, mock_config_writer, mock_artifact_repo
+            proxy_factory, mock_config_writer
         )
 
         # The artifact path should be:
@@ -422,7 +408,6 @@ class TestServerSetupService:
         mock_job,
         temp_builds_dir,
         mock_proxy_manager,
-        mock_artifact_repo,
         mock_config_writer,
         tmp_path,
     ):
@@ -433,7 +418,7 @@ class TestServerSetupService:
         proxy_factory.create.return_value = mock_proxy_manager
 
         service = ServerSetupService(
-            proxy_factory, mock_config_writer, mock_artifact_repo
+            proxy_factory, mock_config_writer
         )
 
         proxy_dir = tmp_path / "proxy"
@@ -466,7 +451,6 @@ class TestServerSetupService:
     def test_cleanup_handles_already_dead_pico_limbo(
         self,
         mock_config_writer,
-        mock_artifact_repo,
     ):
         """Cleanup doesn't crash when pico_limbo is already dead."""
         from src.proxy.factory import ProxyFactory
@@ -474,7 +458,7 @@ class TestServerSetupService:
         proxy_factory = MagicMock(spec=ProxyFactory)
 
         service = ServerSetupService(
-            proxy_factory, mock_config_writer, mock_artifact_repo
+            proxy_factory, mock_config_writer
         )
 
         mock_proxy = MagicMock()
@@ -487,7 +471,6 @@ class TestServerSetupService:
     def test_cleanup_handles_none_proxy(
         self,
         mock_config_writer,
-        mock_artifact_repo,
     ):
         """Cleanup handles None proxy gracefully."""
         from src.proxy.factory import ProxyFactory
@@ -495,7 +478,7 @@ class TestServerSetupService:
         proxy_factory = MagicMock(spec=ProxyFactory)
 
         service = ServerSetupService(
-            proxy_factory, mock_config_writer, mock_artifact_repo
+            proxy_factory, mock_config_writer
         )
 
         mock_pico_proc = MagicMock()

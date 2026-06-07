@@ -17,7 +17,6 @@ from ..application.server_context import ServerContext
 from ..application.server_setup_service import ServerSetupService
 from ..application.test_service import TestService
 from ..domain.job import Job
-from ..infrastructure.artifact_repository import ArtifactRepository
 from ..infrastructure.config_writer import ConfigWriter
 from ..minecraft.input import VirtualInputController
 from ..proxy.factory import ProxyFactory
@@ -38,8 +37,6 @@ class JobOrchestrator:
         Factory for creating proxy manager instances.
     config_writer : ConfigWriter
         Writer for configuration files.
-    artifact_repo : ArtifactRepository
-        Repository for downloading and caching Velocity artifacts.
     game_directory : Path
         Minecraft game directory.
     screenshots_dir : Path
@@ -55,7 +52,6 @@ class JobOrchestrator:
         builds_dir: Path,
         proxy_factory: ProxyFactory,
         config_writer: ConfigWriter,
-        artifact_repo: ArtifactRepository,
         game_directory: Path,
         screenshots_dir: Path,
         build_service: BuildService,
@@ -73,7 +69,6 @@ class JobOrchestrator:
         self._server_setup = ServerSetupService(
             proxy_factory=proxy_factory,
             config_writer=config_writer,
-            artifact_repo=artifact_repo,
         )
 
     def execute(self, job_id: str) -> None:

@@ -21,7 +21,6 @@ from ..config import (
 )
 from ..domain.job import Job
 from ..domain.value_objects import ProxyType
-from ..infrastructure.artifact_repository import ArtifactRepository
 from ..infrastructure.config_writer import ConfigWriter, ServerEntry
 from ..proxy.factory import ProxyFactory
 from .server_context import ServerContext
@@ -34,7 +33,7 @@ __all__ = ["ServerSetupService"]
 class ServerSetupService:
     """Domain service for setting up proxy, config, and PicoLimbo subprocess.
 
-    Uses ProxyFactory, ConfigWriter, ArtifactRepository.
+    Uses ProxyFactory and ConfigWriter.
 
     Parameters
     ----------
@@ -42,19 +41,15 @@ class ServerSetupService:
         Factory for creating proxy manager instances.
     config_writer : ConfigWriter
         Writer for configuration files.
-    artifact_repo : ArtifactRepository
-        Repository for downloading and caching artifacts.
     """
 
     def __init__(
         self,
         proxy_factory: ProxyFactory,
         config_writer: ConfigWriter,
-        artifact_repo: ArtifactRepository,
     ) -> None:
         self._proxy_factory = proxy_factory
         self._config = config_writer
-        self._artifact_repo = artifact_repo
 
     def setup(
         self,
@@ -102,7 +97,7 @@ class ServerSetupService:
 
         if job.proxy_type != ProxyType.NONE and proxy is not None:
             # Download jar if needed
-            jar_path = self._artifact_repo.get_cached_or_download(job.mc_version)
+            jar_path = proxy.download_if_needed()
             # Start proxy
             proxy_proc = proxy.start(
                 config_dir=proxy_dir,

@@ -15,7 +15,6 @@ import pytest
 
 from src.application.build_service import BuildService
 from src.application.test_service import TestService
-from src.infrastructure.artifact_repository import ArtifactRepository
 from src.infrastructure.config_writer import ConfigWriter
 from src.proxy.factory import ProxyFactory
 from src.orchestration.job_orchestrator import JobOrchestrator
@@ -69,13 +68,11 @@ def _build_orchestrator(
     """Build a JobOrchestrator instance (no patching)."""
     proxy_factory = MagicMock(spec=ProxyFactory)
     config_writer = MagicMock(spec=ConfigWriter)
-    artifact_repo = MagicMock(spec=ArtifactRepository)
 
     return JobOrchestrator(
         builds_dir=Path("/tmp/builds"),
         proxy_factory=proxy_factory,
         config_writer=config_writer,
-        artifact_repo=artifact_repo,
         game_directory=Path("/tmp/game"),
         screenshots_dir=Path("/tmp/screenshots"),
         build_service=mock_build_service,
@@ -372,7 +369,6 @@ class TestComputeEta:
         """Create a minimal orchestrator just for _compute_eta tests."""
         proxy_factory = MagicMock(spec=ProxyFactory)
         config_writer = MagicMock(spec=ConfigWriter)
-        artifact_repo = MagicMock(spec=ArtifactRepository)
         build_service = MagicMock(spec=BuildService)
         test_service = _make_test_service_mock()
 
@@ -380,7 +376,6 @@ class TestComputeEta:
             builds_dir=Path("/tmp/builds"),
             proxy_factory=proxy_factory,
             config_writer=config_writer,
-            artifact_repo=artifact_repo,
             game_directory=Path("/tmp/game"),
             screenshots_dir=Path("/tmp/screenshots"),
             build_service=build_service,

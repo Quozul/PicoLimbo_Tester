@@ -12,7 +12,6 @@ from typing import Optional
 
 from .. import config
 from ..di import (
-    get_artifact_repo,
     get_build_service,
     get_config_writer,
     get_proxy_factory,
@@ -31,7 +30,6 @@ def _make_orchestrator() -> JobOrchestrator:
         builds_dir=config.BUILDS_DIR,
         proxy_factory=get_proxy_factory(),
         config_writer=get_config_writer(),
-        artifact_repo=get_artifact_repo(),
         game_directory=config.GAME_DIRECTORY,
         screenshots_dir=config.SCREENSHOTS_DIR,
         build_service=get_build_service(),
