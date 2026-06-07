@@ -4,6 +4,7 @@ Orchestrates git clone/update, commit resolution, cargo build, and artifact
 storage behind a single ``build()`` method.
 """
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,6 +12,8 @@ from src.domain.value_objects import CommitHash, ArtifactPath
 from src.infrastructure.artifact_storage import ArtifactStorage
 from src.infrastructure.cargo_build import CargoBuildAdapter
 from src.infrastructure.git_repository import GitRepository
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -96,6 +99,15 @@ class BuildService:
         # Git: resolve commit (also checks out the ref)
         raw_hash = self._git.resolve(repo_path, ref)
         commit_hash = CommitHash(raw_hash)
+
+        # Check for cached artifact
+        cached = self._storage.get(commit_hash.value)
+        if cached is not None:
+            logger.info("Build cache hit for %s, using cached artifact", commit_hash.value)
+            return BuildResult(
+                commit_hash=commit_hash,
+                artifact_path=ArtifactPath(cached),
+            )
 
         # Build
         source = self._cargo.build(repo_path)

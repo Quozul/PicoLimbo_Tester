@@ -38,10 +38,12 @@ def _make_mock_cargo(
 
 def _make_mock_storage(
     stored_path: Path = Path("/app/builds/aaaaaaa1/latest/pico_limbo"),
+    cached_path: Path | None = None,
 ) -> ArtifactStorage:
     """Create a mock ArtifactStorage."""
     mock = MagicMock(spec=ArtifactStorage)
     mock.store.return_value = stored_path
+    mock.get.return_value = cached_path
     return mock
 
 
@@ -106,6 +108,53 @@ class TestBuildServiceUnit:
 
         with pytest.raises(AttributeError):
             result.commit_hash = CommitHash("0000000000000000000000000000000000000000")
+
+    def test_build_skips_cargo_when_cache_hit(self, tmp_path: Path) -> None:
+        """When a cached artifact exists, cargo.build should NOT be called."""
+        repo_path = tmp_path / "repo"
+        repo_path.mkdir()
+        commit_hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        cached_path = tmp_path / "builds" / "aaaaaaaa" / "latest" / "pico_limbo"
+
+        mock_git = _make_mock_git(repo_path=repo_path, commit_hash=commit_hash)
+        mock_cargo = _make_mock_cargo()
+        mock_storage = _make_mock_storage(cached_path=cached_path)
+
+        service = BuildService(mock_git, mock_cargo, mock_storage, tmp_path / "builds")
+        result = service.build(
+            "https://github.com/Quozul/PicoLimbo.git", "main", "Quozul", "PicoLimbo",
+        )
+
+        # Cargo build should NOT be called
+        mock_cargo.build.assert_not_called()
+        # Store should NOT be called
+        mock_storage.store.assert_not_called()
+        # Should return the cached path
+        assert result.artifact_path.value == cached_path
+
+    def test_build_calls_cargo_when_cache_miss(self, tmp_path: Path) -> None:
+        """When no cached artifact exists, cargo.build should be called."""
+        repo_path = tmp_path / "repo"
+        repo_path.mkdir()
+        commit_hash = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        build_path = repo_path / "target" / "release" / "pico_limbo"
+        stored_path = tmp_path / "builds" / "bbbbbbbb" / "latest" / "pico_limbo"
+
+        mock_git = _make_mock_git(repo_path=repo_path, commit_hash=commit_hash)
+        mock_cargo = _make_mock_cargo(build_path=build_path)
+        mock_storage = _make_mock_storage(stored_path=stored_path, cached_path=None)
+
+        service = BuildService(mock_git, mock_cargo, mock_storage, tmp_path / "builds")
+        result = service.build(
+            "https://github.com/Quozul/PicoLimbo.git", "main", "Quozul", "PicoLimbo",
+        )
+
+        # Cargo build SHOULD be called
+        mock_cargo.build.assert_called_once_with(repo_path)
+        # Store SHOULD be called
+        mock_storage.store.assert_called_once_with(build_path, commit_hash)
+        # Should return the stored path
+        assert result.artifact_path.value == stored_path
 
 
 # ---------------------------------------------------------------------------
