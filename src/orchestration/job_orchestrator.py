@@ -15,11 +15,11 @@ from .. import database
 from ..application.build_service import BuildService
 from ..application.server_context import ServerContext
 from ..application.server_setup_service import ServerSetupService
+from ..application.test_service import TestService
 from ..domain.job import Job
 from ..infrastructure.artifact_repository import ArtifactRepository
 from ..infrastructure.config_writer import ConfigWriter
 from ..minecraft.input import VirtualInputController
-from ..minecraft.runner import test_single_version
 from ..proxy.factory import ProxyFactory
 
 logger = logging.getLogger(__name__)
@@ -59,12 +59,14 @@ class JobOrchestrator:
         game_directory: Path,
         screenshots_dir: Path,
         build_service: BuildService,
+        test_service: TestService,
         virtual_input_controller_cls: Optional[Type[VirtualInputController]] = None,
     ) -> None:
         self._builds_dir = builds_dir
         self._game_directory = game_directory
         self._screenshots_dir = screenshots_dir
         self._build_service = build_service
+        self._test_service = test_service
         self._virtual_input_controller_cls = virtual_input_controller_cls or VirtualInputController
 
         # Domain services
@@ -242,8 +244,6 @@ class JobOrchestrator:
 
         empty_directory(str(self._game_directory / "screenshots"))
 
-        virtual_device = self._virtual_input_controller_cls()
-
         try:
             login_wait_timeout = job.login_wait_timeout
             for version in versions:
@@ -255,10 +255,8 @@ class JobOrchestrator:
                 logger.info("Job %s: testing version %s", job_id, version)
                 self._update_status(job_id, "testing", current_step=f"testing:{version}")
 
-                result = test_single_version(
-                    version, commit_hash, virtual_device, self._screenshots_dir, login_wait_timeout
-                )
-                test_results[version] = result
+                result = self._test_service.test_version(version, commit_hash, login_wait_timeout)
+                test_results[version] = result.to_dict()
 
                 # Persist after each version
                 database.update_job(job_id, test_results=json.dumps(test_results))
@@ -266,7 +264,5 @@ class JobOrchestrator:
         except Exception as e:
             self._update_status(job_id, "failed", error_message=str(e))
             raise
-        finally:
-            virtual_device.close()
 
         return test_results

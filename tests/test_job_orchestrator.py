@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.application.build_service import BuildService
+from src.application.test_service import TestService
 from src.infrastructure.artifact_repository import ArtifactRepository
 from src.infrastructure.config_writer import ConfigWriter
 from src.proxy.factory import ProxyFactory
@@ -59,6 +60,7 @@ def _make_job_dict(
 
 def _build_orchestrator(
     mock_build_service: MagicMock,
+    mock_test_service: MagicMock,
     mock_virtual_input_cls: MagicMock,
     mock_server_context: MagicMock,
     mock_setup_service_cls: MagicMock,
@@ -77,6 +79,7 @@ def _build_orchestrator(
         game_directory=Path("/tmp/game"),
         screenshots_dir=Path("/tmp/screenshots"),
         build_service=mock_build_service,
+        test_service=mock_test_service,
         virtual_input_controller_cls=mock_virtual_input_cls,
     )
 
@@ -114,6 +117,21 @@ def _make_mocks(
     return job_dict, mock_setup_service_cls, mock_database
 
 
+def _make_test_service_mock(
+    result: dict | None = None,
+    side_effect: Exception | None = None,
+) -> MagicMock:
+    """Create a mock TestService."""
+    mock = MagicMock(spec=TestService)
+    if side_effect is not None:
+        mock.test_version.side_effect = side_effect
+    else:
+        mock_result = MagicMock()
+        mock_result.to_dict.return_value = result or {"version": "1.21.8", "passed": True}
+        mock.test_version.return_value = mock_result
+    return mock
+
+
 # ---------------------------------------------------------------------------
 # execute() — full lifecycle
 # ---------------------------------------------------------------------------
@@ -139,7 +157,7 @@ class TestExecuteFullLifecycle:
         mock_pico.stdout.readline.return_value = "Listening on: 127.0.0.1:30066\n"
         mock_server_context.pico_limbo_proc = mock_pico
 
-        test_result = {"version": "1.21.8", "passed": True}
+        mock_test_service = _make_test_service_mock({"version": "1.21.8", "passed": True})
 
         job_dict, mock_setup_cls, mock_db = _make_mocks()
         mock_setup_cls.return_value.setup.return_value = mock_server_context
@@ -150,12 +168,10 @@ class TestExecuteFullLifecycle:
         ), patch(
             "src.orchestration.job_orchestrator.database",
             mock_db,
-        ), patch(
-            "src.orchestration.job_orchestrator.test_single_version",
-            return_value=test_result,
         ):
             orchestrator = _build_orchestrator(
                 mock_build_service,
+                mock_test_service,
                 mock_virtual_input_cls,
                 mock_server_context,
                 mock_setup_cls,
@@ -174,8 +190,8 @@ class TestExecuteFullLifecycle:
         # Verify server setup was called
         mock_setup_cls.return_value.setup.assert_called_once()
 
-        # Verify virtual input controller was used and closed
-        mock_virtual_input.close.assert_called_once()
+        # Verify test service was called
+        mock_test_service.test_version.assert_called_once()
 
 
 class TestExecuteBuildFailure:
@@ -188,6 +204,7 @@ class TestExecuteBuildFailure:
 
         mock_virtual_input_cls = MagicMock()
         mock_server_context = MagicMock()
+        mock_test_service = _make_test_service_mock()
 
         job_dict, mock_setup_cls, mock_db = _make_mocks()
         mock_setup_cls.return_value.setup.return_value = mock_server_context
@@ -201,6 +218,7 @@ class TestExecuteBuildFailure:
         ):
             orchestrator = _build_orchestrator(
                 mock_build_service,
+                mock_test_service,
                 mock_virtual_input_cls,
                 mock_server_context,
                 mock_setup_cls,
@@ -228,6 +246,7 @@ class TestExecuteServerFailure:
         mock_virtual_input_cls = MagicMock()
         mock_server_context = MagicMock()
         mock_server_context.stop = MagicMock()
+        mock_test_service = _make_test_service_mock()
 
         job_dict, mock_setup_cls, mock_db = _make_mocks()
         mock_setup_cls.return_value.setup.side_effect = RuntimeError("server setup failed")
@@ -241,6 +260,7 @@ class TestExecuteServerFailure:
         ):
             orchestrator = _build_orchestrator(
                 mock_build_service,
+                mock_test_service,
                 mock_virtual_input_cls,
                 mock_server_context,
                 mock_setup_cls,
@@ -274,6 +294,8 @@ class TestExecuteTestFailure:
         mock_server_context.pico_limbo_proc.poll.return_value = None
         mock_server_context.stop = MagicMock()
 
+        mock_test_service = _make_test_service_mock(side_effect=RuntimeError("test failed"))
+
         job_dict, mock_setup_cls, mock_db = _make_mocks()
         mock_setup_cls.return_value.setup.return_value = mock_server_context
 
@@ -283,12 +305,10 @@ class TestExecuteTestFailure:
         ), patch(
             "src.orchestration.job_orchestrator.database",
             mock_db,
-        ), patch(
-            "src.orchestration.job_orchestrator.test_single_version",
-            side_effect=RuntimeError("test failed"),
         ):
             orchestrator = _build_orchestrator(
                 mock_build_service,
+                mock_test_service,
                 mock_virtual_input_cls,
                 mock_server_context,
                 mock_setup_cls,
@@ -301,8 +321,8 @@ class TestExecuteTestFailure:
         mock_build_service.build.assert_called_once()
         # Verify server setup was called
         mock_setup_cls.return_value.setup.assert_called_once()
-        # Verify virtual input controller was closed
-        mock_virtual_input.close.assert_called_once()
+        # Verify test service was called
+        mock_test_service.test_version.assert_called_once()
 
 
 class TestExecuteJobNotFound:
@@ -313,6 +333,7 @@ class TestExecuteJobNotFound:
         mock_build_service = MagicMock(spec=BuildService)
         mock_virtual_input_cls = MagicMock()
         mock_server_context = MagicMock()
+        mock_test_service = _make_test_service_mock()
 
         job_dict, mock_setup_cls, mock_db = _make_mocks(job_dict=None)
 
@@ -325,6 +346,7 @@ class TestExecuteJobNotFound:
         ):
             orchestrator = _build_orchestrator(
                 mock_build_service,
+                mock_test_service,
                 mock_virtual_input_cls,
                 mock_server_context,
                 mock_setup_cls,
@@ -352,6 +374,7 @@ class TestComputeEta:
         config_writer = MagicMock(spec=ConfigWriter)
         artifact_repo = MagicMock(spec=ArtifactRepository)
         build_service = MagicMock(spec=BuildService)
+        test_service = _make_test_service_mock()
 
         return JobOrchestrator(
             builds_dir=Path("/tmp/builds"),
@@ -361,6 +384,7 @@ class TestComputeEta:
             game_directory=Path("/tmp/game"),
             screenshots_dir=Path("/tmp/screenshots"),
             build_service=build_service,
+            test_service=test_service,
         )
 
     def test_compute_eta_returns_none_when_not_testing(self):
