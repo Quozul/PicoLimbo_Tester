@@ -6,6 +6,7 @@ VirtualInputController to test a single version of PicoLimbo.
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import time
 from dataclasses import dataclass
@@ -16,6 +17,9 @@ from src.infrastructure.screen_region import ScreenRegionMatcher
 from src.infrastructure.window_manager import WindowManager
 from src.minecraft.input import VirtualInputController
 from src.versions import VersionSupport
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 __all__ = ["TestService", "TestContext"]
 
@@ -149,11 +153,34 @@ class TestService:
         RuntimeError
             If the Minecraft window cannot be found.
         """
-        # Find the window
-        window_id = self._wm.search_by_name("Minecraft")
-        if window_id is None:
-            window_id = self._wm.search_by_class("Minecraft")
-        if window_id is None:
+        # Search for the window with a timeout (Minecraft takes time to start).
+        # Older versions (LWJGL 2) create transient splash/init windows that
+        # disappear before xdotool can query them, so we need the geometry
+        # check inside the loop.
+        deadline = time.time() + 120
+        window_id = None
+        window_info = None
+        while time.time() < deadline:
+            window_id = self._wm.search_by_name("Minecraft")
+            if window_id is None:
+                window_id = self._wm.search_by_name("Minecraft*")
+            if window_id is None:
+                window_id = self._wm.search_by_name("Minecraft 1.13")
+            if window_id is None:
+                window_id = self._wm.search_by_class("java")
+
+            if window_id:
+                logger.info("Found Minecraft window: %s", window_id)
+                window_info = self._wm.get_geometry(window_id)
+                if window_info:
+                    logger.info("Found window geometry: %s", window_info)
+                    break
+                logger.debug("Window %s has no geometry, retrying...", window_id)
+            else:
+                logger.debug("No window found, retrying...")
+            time.sleep(1)
+
+        if not window_id or not window_info:
             raise RuntimeError(f"Minecraft window not found for version {version}")
 
         # Position window for LWJGL2 versions
@@ -162,14 +189,36 @@ class TestService:
 
         # Wait for quit button region to appear
         quit_region = self._get_quit_region(version)
-        self._screen.wait_for_region("quit_button", quit_region, timeout=15.0)
+        logger.info("Waiting for quit button region: %s", quit_region)
+        matched = self._screen.wait_for_region("quit_button", quit_region, timeout=15.0)
+        logger.info("Quit button region matched: %s", matched)
 
         return window_id
 
     def _log_to_multiplayer(self, version: Version) -> None:
-        """Navigate to multiplayer menu."""
-        click = self._get_multiplayer_click(version)
-        self._input.click(click[0], click[1])
+        """Navigate to multiplayer menu.
+
+        Performs 3 sequential clicks:
+        1. "Multiplayer" button (507, 438)
+        2. Server button (507, 146 for 1.8+, 507, 264 for 1.7.x)
+        3. "Join Server" button (201, 630)
+        """
+        from src.config import CLICK_JOIN_SERVER, CLICK_MULTIPLAYER
+
+        # Click "Multiplayer" button
+        logger.info("_log_to_multiplayer: clicking Multiplayer button at (507, 438)")
+        self._input.click(507, 438)
+        time.sleep(0.5)
+
+        # Click server button
+        server_click = self._get_multiplayer_click(version)
+        logger.info("_log_to_multiplayer: clicking server button at %s", server_click)
+        self._input.click(server_click[0], server_click[1])
+        time.sleep(0.5)
+
+        # Click "Join Server" button
+        logger.info("_log_to_multiplayer: clicking Join Server button at %s", CLICK_JOIN_SERVER)
+        self._input.click(CLICK_JOIN_SERVER[0], CLICK_JOIN_SERVER[1])
 
     def _capture_screenshot(
         self,

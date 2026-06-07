@@ -6,8 +6,12 @@ If the xdotool API changes, only this file needs updating.
 
 from __future__ import annotations
 
+import logging
 import re
 import subprocess
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 class WindowManager:
@@ -27,6 +31,7 @@ class WindowManager:
             capture_output=True,
             text=True,
         )
+        logger.debug("search_by_name(%r) raw=%r rc=%s", pattern, result.stdout.strip(), result.returncode)
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip().split("\n")[0]
         return None
@@ -41,6 +46,7 @@ class WindowManager:
             capture_output=True,
             text=True,
         )
+        logger.debug("search_by_class(%r) raw=%r rc=%s", class_name, result.stdout.strip(), result.returncode)
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip().split("\n")[-1]
         return None
@@ -56,7 +62,10 @@ class WindowManager:
             capture_output=True,
             text=True,
         )
-        return parse_window_info(result.stdout.strip())
+        raw = result.stdout.strip()
+        logger.info("getwindowgeometry(%s) raw=%r stderr=%r rc=%s",
+                    window_id, raw, result.stderr.strip(), result.returncode)
+        return parse_window_info(raw)
 
     def move_to(self, window_id: str, x: int, y: int) -> None:
         """Move a window to absolute coordinates."""
@@ -69,14 +78,19 @@ class WindowManager:
 def parse_window_info(window_text: str) -> dict[str, int] | None:
     """Parse xdotool getwindowgeometry output into a dict.
 
-    Parameters
-    ----------
-    window_text : str
-        Raw output from ``xdotool getwindowgeometry``, e.g.::
+    Handles both old and new xdotool output formats:
 
-            width=1024  height=768
-            depth=24
-            x=0     y=0
+    Old format::
+
+        width=1024  height=768
+        depth=24
+        x=0     y=0
+
+    New format::
+
+        Window 14680072
+          Position: 1,18 (screen: 0)
+          Geometry: 1024x768
 
     Returns
     -------
@@ -84,6 +98,18 @@ def parse_window_info(window_text: str) -> dict[str, int] | None:
         ``{"x": 0, "y": 0, "width": 1024, "height": 768}`` or ``None``
         if the text doesn't contain the expected fields.
     """
+    # Try new format first: "Position: x,y" and "Geometry: WxH"
+    pos_match = re.search(r"Position:\s*(-?\d+),\s*(-?\d+)", window_text)
+    geo_match = re.search(r"Geometry:\s*(\d+)x(\d+)", window_text)
+    if pos_match and geo_match:
+        return {
+            "x": int(pos_match.group(1)),
+            "y": int(pos_match.group(2)),
+            "width": int(geo_match.group(1)),
+            "height": int(geo_match.group(2)),
+        }
+
+    # Fallback to old format: "x=0 y=0 width=1024 height=768"
     x_match = re.search(r"x\s*[=:]\s*(-?\d+)", window_text, re.IGNORECASE)
     y_match = re.search(r"y\s*[=:]\s*(-?\d+)", window_text, re.IGNORECASE)
     width_match = re.search(r"width\s*[=:]\s*(\d+)", window_text, re.IGNORECASE)

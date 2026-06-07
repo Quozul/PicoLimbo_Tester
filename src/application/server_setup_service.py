@@ -91,9 +91,7 @@ class ServerSetupService:
         """
         # Validate artifact
         commit_hash = job.commit_hash.value
-        artifact_path = (
-            builds_dir / job.owner / job.ref / commit_hash / "pico_limbo"
-        )
+        artifact_path = builds_dir / commit_hash[:8] / "latest" / "pico_limbo"
         if not artifact_path.exists():
             raise RuntimeError(f"Artifact not found: {artifact_path}")
 

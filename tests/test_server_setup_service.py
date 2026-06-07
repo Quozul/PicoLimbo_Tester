@@ -96,12 +96,11 @@ def mock_config_writer():
 def temp_builds_dir(tmp_path: Path) -> Path:
     """Create a temporary builds directory with a mock artifact."""
     builds_dir = tmp_path / "builds"
-    # Path: builds / owner / ref / commit_hash / "pico_limbo"
+    # Path: builds / commit_hash[:8] / "latest" / "pico_limbo"
     artifact_path = (
         builds_dir
-        / "test-owner"
-        / "abc123def456"  # ref from mock_job
-        / "abc123def456789012345678901234567890abcd"  # commit_hash
+        / "abc123de"  # commit_hash[:8]
+        / "latest"
         / "pico_limbo"
     )
     artifact_path.parent.mkdir(parents=True)
@@ -386,12 +385,11 @@ class TestServerSetupService:
         )
 
         # The artifact path should be:
-        # builds_dir / owner / ref / commit_hash / "pico_limbo"
+        # builds_dir / commit_hash[:8] / "latest" / "pico_limbo"
         expected_path = (
             temp_builds_dir
-            / "test-owner"
-            / "abc123def456"  # ref
-            / "abc123def456789012345678901234567890abcd"  # commit_hash
+            / "abc123de"  # commit_hash[:8]
+            / "latest"
             / "pico_limbo"
         )
         assert expected_path.exists()

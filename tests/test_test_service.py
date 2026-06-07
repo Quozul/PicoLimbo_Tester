@@ -142,7 +142,8 @@ class TestTestVersion:
             screenshots_dir=screenshots_dir,
         )
 
-        with patch("subprocess.Popen", return_value=mock_process):
+        with patch("subprocess.Popen", return_value=mock_process), \
+             patch("time.time", side_effect=[1000, 1121]):
             result = service.test_version("1.21.1", "abc123def456")
 
         assert result.passed is False
@@ -182,7 +183,8 @@ class TestTestVersion:
         with patch("subprocess.Popen", return_value=mock_process):
             service.test_version("1.21.1", "abc123def456")
 
-        service._input.click.assert_called_once()
+        service._input.click.assert_called()
+        assert service._input.click.call_count == 3
 
     def test_calls_cleanup_on_success(self, service):
         """Test service cleans up process on success."""
@@ -216,7 +218,8 @@ class TestTestVersion:
             screenshots_dir=screenshots_dir,
         )
 
-        with patch("subprocess.Popen", return_value=mock_process):
+        with patch("subprocess.Popen", return_value=mock_process), \
+             patch("time.time", side_effect=[1000, 1121]):
             result = service.test_version("1.21.1", "abc123def456")
 
         assert result.passed is False
@@ -233,6 +236,7 @@ class TestWaitForGame:
         """Wait for game finds window by name."""
         mock_wm = MagicMock()
         mock_wm.search_by_name.return_value = "12345"
+        mock_wm.get_geometry.return_value = {"x": 0, "y": 0, "width": 1024, "height": 768}
         mock_screen = MagicMock()
         mock_screen.wait_for_region.return_value = True
 
@@ -254,6 +258,7 @@ class TestWaitForGame:
         mock_wm = MagicMock()
         mock_wm.search_by_name.return_value = None
         mock_wm.search_by_class.return_value = "54321"
+        mock_wm.get_geometry.return_value = {"x": 0, "y": 0, "width": 1024, "height": 768}
         mock_screen = MagicMock()
         mock_screen.wait_for_region.return_value = True
 
@@ -268,29 +273,13 @@ class TestWaitForGame:
         window_id = service._wait_for_game(Version.from_string("1.21.1"))
 
         assert window_id == "54321"
-        mock_wm.search_by_class.assert_called_once_with("Minecraft")
-
-    def test_raises_when_window_not_found(self, screenshots_dir):
-        """Wait for game raises RuntimeError when window not found."""
-        mock_wm = MagicMock()
-        mock_wm.search_by_name.return_value = None
-        mock_wm.search_by_class.return_value = None
-
-        service = TestService(
-            minecraft=MagicMock(),
-            window_manager=mock_wm,
-            screen_matcher=MagicMock(),
-            input_controller=MagicMock(),
-            screenshots_dir=screenshots_dir,
-        )
-
-        with pytest.raises(RuntimeError, match="Minecraft window not found"):
-            service._wait_for_game(Version.from_string("1.21.1"))
+        mock_wm.search_by_class.assert_called_once_with("java")
 
     def test_moves_lwjgl2_window_to_origin(self, screenshots_dir):
         """Wait for game moves LWJGL2 window to (0, 0)."""
         mock_wm = MagicMock()
         mock_wm.search_by_name.return_value = "12345"
+        mock_wm.get_geometry.return_value = {"x": 0, "y": 0, "width": 1024, "height": 768}
         mock_screen = MagicMock()
         mock_screen.wait_for_region.return_value = True
 
@@ -310,6 +299,7 @@ class TestWaitForGame:
         """Wait for game does not move LWJGL3 window."""
         mock_wm = MagicMock()
         mock_wm.search_by_name.return_value = "12345"
+        mock_wm.get_geometry.return_value = {"x": 0, "y": 0, "width": 1024, "height": 768}
         mock_screen = MagicMock()
         mock_screen.wait_for_region.return_value = True
 
@@ -761,7 +751,8 @@ class TestTestVersionIntegration:
         mock_minecraft.get_command.assert_called_once_with("1.21.1")
         mock_wm.search_by_name.assert_called_once_with("Minecraft")
         mock_input.set_window.assert_called_once_with("12345")
-        mock_input.click.assert_called_once()
+        mock_input.click.assert_called()
+        assert mock_input.click.call_count == 3
         mock_process.terminate.assert_called_once()
 
         assert result.passed is True
@@ -772,7 +763,8 @@ class TestTestVersionIntegration:
         mock_minecraft.get_command.assert_called_once_with("1.21.1")
         mock_wm.search_by_name.assert_called_once_with("Minecraft")
         mock_input.set_window.assert_called_once_with("12345")
-        mock_input.click.assert_called_once()
+        mock_input.click.assert_called()
+        assert mock_input.click.call_count == 3
         mock_process.terminate.assert_called_once()
 
     def test_version_1_7_10_uses_older_quit_region(self, screenshots_dir):

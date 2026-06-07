@@ -95,9 +95,8 @@ class JobOrchestrator:
         # Convert to domain object
         job = Job.from_dict(job_dict)
 
-        # Resolve versions
-        versions = job.versions
-        if not versions:
+        # Resolve versions (always ensure strings for downstream consumers)
+        if not job.versions:
             from ..versions import ALL_VERSIONS
 
             versions = [str(v) for v in ALL_VERSIONS]
@@ -114,6 +113,8 @@ class JobOrchestrator:
                 mc_version=job.mc_version,
             )
             database.update_job(job_id, versions=json.dumps(versions))
+        else:
+            versions = [str(v) for v in job.versions]
 
         proxy_type = job.proxy_type.value if hasattr(job.proxy_type, "value") else job.proxy_type
         logger.info("Job %s: proxy_type=%r", job_id, proxy_type)
@@ -210,7 +211,7 @@ class JobOrchestrator:
         )
 
         # Update job with artifact path
-        database.update_job(job.job_id, artifact_path=str(result.artifact_path.value))
+        database.update_job(job.job_id.value, artifact_path=str(result.artifact_path.value))
         logger.info("Job %s: build completed, artifact=%s", job.job_id, result.artifact_path.value)
 
     def _run_server_setup(
@@ -231,7 +232,7 @@ class JobOrchestrator:
         versions: list[str],
     ) -> dict:
         """Run tests for all versions."""
-        job_id = job.job_id
+        job_id = job.job_id.value
         commit_hash = job.commit_hash.value
         test_results = dict(job.test_results or {})
 

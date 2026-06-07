@@ -14,6 +14,7 @@ from PIL import Image, ImageChops
 import pyscreenshot as ImageGrab
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 VALID_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".gif")
 
