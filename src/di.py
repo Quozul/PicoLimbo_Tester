@@ -11,7 +11,7 @@ CargoBuildAdapter├──► BuildService ──┐
 ArtifactStorage  ─┘                  ├──► JobOrchestrator
 ConfigWriter    ──┐                  │
 ProxyFactory ─────┼──► ServerSetupService
-ArtifactRepository─┘
+PaperMCRepository─┘
 ```
 
 ## Usage
@@ -33,7 +33,7 @@ from __future__ import annotations
 from . import config
 from .application.build_service import BuildService
 from .application.test_service import TestService
-from .infrastructure.artifact_repository import ArtifactRepository
+from .infrastructure.papermc_repository import PaperMCRepository
 from .infrastructure.artifact_storage import ArtifactStorage
 from .infrastructure.cargo_build import CargoBuildAdapter
 from .infrastructure.config_writer import ConfigWriter
@@ -51,7 +51,7 @@ _cargo: CargoBuildAdapter | None = None
 _build_service: BuildService | None = None
 _config_writer: ConfigWriter | None = None
 _proxy_factory: ProxyFactory | None = None
-_artifact_repo: ArtifactRepository | None = None
+_artifact_repo: PaperMCRepository | None = None
 _minecraft: MinecraftLauncher | None = None
 _window_manager: WindowManager | None = None
 _screen_matcher: ScreenRegionMatcher | None = None
@@ -136,17 +136,17 @@ def get_proxy_factory() -> ProxyFactory:
     return _proxy_factory
 
 
-def get_artifact_repo() -> ArtifactRepository:
-    """Get the shared ArtifactRepository instance (lazy-created).
+def get_papermc_repo() -> PaperMCRepository:
+    """Get the shared PaperMCRepository instance (lazy-created).
 
     Returns
     -------
-    ArtifactRepository
-        The shared ArtifactRepository instance.
+    PaperMCRepository
+        The shared PaperMCRepository instance.
     """
     global _artifact_repo
     if _artifact_repo is None:
-        _artifact_repo = ArtifactRepository(
+        _artifact_repo = PaperMCRepository(
             api_base=config.VELOCITY_API_BASE,
             cache_dir=config.PROXY_CACHE_DIR / "velocity",
         )
@@ -244,7 +244,7 @@ __all__ = [
     "get_build_service",
     "get_config_writer",
     "get_proxy_factory",
-    "get_artifact_repo",
+    "get_papermc_repo",
     "get_minecraft",
     "get_window_manager",
     "get_screen_matcher",

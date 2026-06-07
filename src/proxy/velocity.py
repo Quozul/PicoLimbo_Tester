@@ -12,7 +12,7 @@ from pathlib import Path
 from subprocess import Popen
 
 from .. import config
-from ..infrastructure.artifact_repository import ArtifactRepository
+from ..infrastructure.papermc_repository import PaperMCRepository
 from ..infrastructure.config_writer import ConfigWriter
 from .base import ProxyManager
 
@@ -34,7 +34,7 @@ class VelocityProxyManager(ProxyManager):
     def __init__(
         self,
         cache_dir: Path | None = None,
-        artifact_repo: ArtifactRepository | None = None,
+        artifact_repo: PaperMCRepository | None = None,
         config_writer: ConfigWriter | None = None,
         forwarding_secret: str | None = None,
     ) -> None:
@@ -43,7 +43,7 @@ class VelocityProxyManager(ProxyManager):
         Args:
             cache_dir: Directory to cache Velocity jars.
                 Defaults to ``config.PROXY_CACHE_DIR / "velocity"``.
-            artifact_repo: Pre-configured ``ArtifactRepository``.
+            artifact_repo: Pre-configured ``PaperMCRepository``.
                 If ``None``, one is created from *cache_dir* and
                 ``config.VELOCITY_API_BASE``.
             config_writer: Pre-configured ``ConfigWriter`` for TOML output.
@@ -55,7 +55,7 @@ class VelocityProxyManager(ProxyManager):
         self._cache_dir = cache_dir or config.PROXY_CACHE_DIR / "velocity"
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._metadata_file = self._cache_dir / "metadata.json"
-        self._artifact_repo = artifact_repo or ArtifactRepository(
+        self._artifact_repo = artifact_repo or PaperMCRepository(
             api_base=config.VELOCITY_API_BASE,
             cache_dir=self._cache_dir,
         )

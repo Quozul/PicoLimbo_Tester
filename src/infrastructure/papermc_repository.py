@@ -1,6 +1,6 @@
-"""Artifact repository — anti-corruption layer for PaperMC API downloads.
+"""PaperMC repository — anti-corruption layer for PaperMC API downloads.
 
-Provides a clean ``ArtifactRepository`` class that wraps all PaperMC API calls
+Provides a clean ``PaperMCRepository`` class that wraps all PaperMC API calls
 and artifact download/caching logic behind a simple interface.  All HTTP
 requests are isolated here so the rest of the codebase never invokes ``httpx``
 directly for artifact fetching.
@@ -14,8 +14,8 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
-class ArtifactRepository:
-    """Anti-corruption layer for artifact downloads (PaperMC API).
+class PaperMCRepository:
+    """Anti-corruption layer for PaperMC artifact downloads.
 
     Parameters
     ----------
@@ -164,34 +164,3 @@ class ArtifactRepository:
                 dest.unlink()
                 logger.debug("Cleaned up partial download at %s", dest)
             raise RuntimeError(f"Failed to download {url}: {exc}")
-
-    def get_cached_or_download(self, mc_version: str) -> Path:
-        """Get a cached JAR if available, otherwise download it.
-
-        Parameters
-        ----------
-        mc_version : str
-            Minecraft version to fetch.
-
-        Returns
-        -------
-        Path
-            Path to the cached or freshly downloaded JAR.
-
-        Raises
-        ------
-        RuntimeError
-            If no stable build exists for the given version or download fails.
-        """
-        self._cache_dir.mkdir(parents=True, exist_ok=True)
-        cached = self._cache_dir / f"velocity-{mc_version}.jar"
-        if cached.exists():
-            logger.info("Using cached Velocity jar: %s", cached)
-            return cached
-
-        url = self.get_download_url(mc_version)
-        if not url:
-            raise RuntimeError(f"No stable build for MC {mc_version}")
-
-        logger.info("Downloading Velocity (MC %s) from %s", mc_version, url)
-        return self.download(url, cached)

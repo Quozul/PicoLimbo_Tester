@@ -1,10 +1,9 @@
-"""Tests for ArtifactRepository — PaperMC API ACL.
+"""Tests for PaperMCRepository — PaperMC API ACL.
 
 Covers:
 - get_latest_mc_version() — fetches latest MC version
 - get_download_url() — fetches stable build URL
 - download() — downloads file, cleans up on failure
-- get_cached_or_download() — cache check then download
 """
 
 import json
@@ -14,7 +13,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-from src.infrastructure.artifact_repository import ArtifactRepository
+from src.infrastructure.papermc_repository import PaperMCRepository
 
 
 # ============================================================================
@@ -31,10 +30,10 @@ def mock_http_client():
 
 @pytest.fixture
 def repo(mock_http_client, tmp_path):
-    """Create an ArtifactRepository with a mocked HTTP client."""
+    """Create an PaperMCRepository with a mocked HTTP client."""
     cache = tmp_path / "cache" / "velocity"
     cache.mkdir(parents=True)
-    return ArtifactRepository(
+    return PaperMCRepository(
         api_base="https://fill.papermc.io/v3/projects/velocity",
         cache_dir=cache,
         http=mock_http_client,
@@ -61,7 +60,7 @@ class TestGetLatestMcVersion:
             },
         )
 
-        repo = ArtifactRepository(
+        repo = PaperMCRepository(
             api_base="https://fill.papermc.io/v3/projects/velocity",
             cache_dir=Path("/tmp/cache"),
             http=mock_http_client,
@@ -81,7 +80,7 @@ class TestGetLatestMcVersion:
             json=lambda: {"versions": []},
         )
 
-        repo = ArtifactRepository(
+        repo = PaperMCRepository(
             api_base="https://fill.papermc.io/v3/projects/velocity",
             cache_dir=Path("/tmp/cache"),
             http=mock_http_client,
@@ -95,7 +94,7 @@ class TestGetLatestMcVersion:
             "Not Found", request=MagicMock(), response=MagicMock(status_code=404)
         )
 
-        repo = ArtifactRepository(
+        repo = PaperMCRepository(
             api_base="https://fill.papermc.io/v3/projects/velocity",
             cache_dir=Path("/tmp/cache"),
             http=mock_http_client,
@@ -138,7 +137,7 @@ class TestGetDownloadUrl:
             ],
         )
 
-        repo = ArtifactRepository(
+        repo = PaperMCRepository(
             api_base="https://fill.papermc.io/v3/projects/velocity",
             cache_dir=Path("/tmp/cache"),
             http=mock_http_client,
@@ -160,7 +159,7 @@ class TestGetDownloadUrl:
             ],
         )
 
-        repo = ArtifactRepository(
+        repo = PaperMCRepository(
             api_base="https://fill.papermc.io/v3/projects/velocity",
             cache_dir=Path("/tmp/cache"),
             http=mock_http_client,
@@ -176,7 +175,7 @@ class TestGetDownloadUrl:
             json=lambda: [],
         )
 
-        repo = ArtifactRepository(
+        repo = PaperMCRepository(
             api_base="https://fill.papermc.io/v3/projects/velocity",
             cache_dir=Path("/tmp/cache"),
             http=mock_http_client,
@@ -198,7 +197,7 @@ class TestGetDownloadUrl:
             ],
         )
 
-        repo = ArtifactRepository(
+        repo = PaperMCRepository(
             api_base="https://fill.papermc.io/v3/projects/velocity",
             cache_dir=Path("/tmp/cache"),
             http=mock_http_client,
@@ -214,7 +213,7 @@ class TestGetDownloadUrl:
             json=lambda: {"error": "bad format"},
         )
 
-        repo = ArtifactRepository(
+        repo = PaperMCRepository(
             api_base="https://fill.papermc.io/v3/projects/velocity",
             cache_dir=Path("/tmp/cache"),
             http=mock_http_client,
@@ -229,7 +228,7 @@ class TestGetDownloadUrl:
             "Not Found", request=MagicMock(), response=MagicMock(status_code=404)
         )
 
-        repo = ArtifactRepository(
+        repo = PaperMCRepository(
             api_base="https://fill.papermc.io/v3/projects/velocity",
             cache_dir=Path("/tmp/cache"),
             http=mock_http_client,
@@ -254,7 +253,7 @@ class TestDownload:
             content=b"fake-jar-content",
         )
 
-        repo = ArtifactRepository(
+        repo = PaperMCRepository(
             api_base="https://fill.papermc.io/v3/projects/velocity",
             cache_dir=tmp_path / "cache",
             http=mock_http_client,
@@ -275,7 +274,7 @@ class TestDownload:
             response=MagicMock(status_code=500),
         )
 
-        repo = ArtifactRepository(
+        repo = PaperMCRepository(
             api_base="https://fill.papermc.io/v3/projects/velocity",
             cache_dir=tmp_path / "cache",
             http=mock_http_client,
@@ -295,7 +294,7 @@ class TestDownload:
             response=MagicMock(status_code=404),
         )
 
-        repo = ArtifactRepository(
+        repo = PaperMCRepository(
             api_base="https://fill.papermc.io/v3/projects/velocity",
             cache_dir=tmp_path / "cache",
             http=mock_http_client,
@@ -304,96 +303,3 @@ class TestDownload:
             repo.download("https://cdn.example.com/velocity.jar", jar_path)
 
 
-# ============================================================================
-# get_cached_or_download
-# ============================================================================
-
-
-class TestGetCachedOrDownload:
-    """Tests for get_cached_or_download()."""
-
-    def test_returns_cached_jar_when_exists(self, repo, tmp_path):
-        """Returns the cached JAR path if it already exists."""
-        jar_path = repo._cache_dir / "velocity-1.21.8.jar"
-        jar_path.write_bytes(b"cached-jar")
-
-        result = repo.get_cached_or_download("1.21.8")
-
-        assert result == jar_path
-        # Should not call the API
-        assert repo._http.get.call_count == 0
-
-    def test_downloads_when_cache_miss(self, mock_http_client, tmp_path):
-        """Downloads and caches the jar when cache is empty."""
-        cache = tmp_path / "cache" / "velocity"
-        cache.mkdir(parents=True)
-        jar_path = cache / "velocity-1.21.8.jar"
-
-        mock_http_client.get.side_effect = [
-            # GET /versions/{mc}/builds → stable build
-            MagicMock(
-                status_code=200,
-                json=lambda: [
-                    {
-                        "id": 343,
-                        "channel": "STABLE",
-                        "downloads": {
-                            "server:default": {
-                                "url": "https://cdn.example.com/velocity.jar"
-                            }
-                        },
-                    }
-                ],
-            ),
-            # GET download URL → jar content
-            MagicMock(status_code=200, content=b"new-jar-content"),
-        ]
-
-        repo = ArtifactRepository(
-            api_base="https://fill.papermc.io/v3/projects/velocity",
-            cache_dir=cache,
-            http=mock_http_client,
-        )
-        result = repo.get_cached_or_download("1.21.8")
-
-        assert result == jar_path
-        assert jar_path.read_bytes() == b"new-jar-content"
-
-    def test_raises_when_no_stable_build(self, mock_http_client, tmp_path):
-        """Raises RuntimeError when no stable build is found."""
-        cache = tmp_path / "cache" / "velocity"
-        cache.mkdir(parents=True)
-
-        mock_http_client.get.return_value = MagicMock(
-            status_code=200,
-            json=lambda: [],
-        )
-
-        repo = ArtifactRepository(
-            api_base="https://fill.papermc.io/v3/projects/velocity",
-            cache_dir=cache,
-            http=mock_http_client,
-        )
-        with pytest.raises(RuntimeError, match="No stable build"):
-            repo.get_cached_or_download("1.21.8")
-
-    def test_creates_cache_directory(self, tmp_path):
-        """Creates the cache directory if it doesn't exist."""
-        cache = tmp_path / "new" / "cache" / "velocity"
-        # Don't create it — let the method do it
-
-        mock_http = MagicMock(spec=httpx.Client)
-        mock_http.get.return_value = MagicMock(
-            status_code=200,
-            json=lambda: [],
-        )
-
-        repo = ArtifactRepository(
-            api_base="https://fill.papermc.io/v3/projects/velocity",
-            cache_dir=cache,
-            http=mock_http,
-        )
-        with pytest.raises(RuntimeError, match="No stable build"):
-            repo.get_cached_or_download("1.21.8")
-
-        assert cache.exists()

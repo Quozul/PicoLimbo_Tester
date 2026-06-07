@@ -1,7 +1,7 @@
 """Server setup domain service.
 
 Orchestrates proxy, config, and PicoLimbo subprocess lifecycle
-using ProxyFactory, ConfigWriter, and ArtifactRepository.
+using ProxyFactory and ConfigWriter.
 """
 
 from __future__ import annotations

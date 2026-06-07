@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.infrastructure.artifact_repository import ArtifactRepository
+from src.infrastructure.papermc_repository import PaperMCRepository
 from src.proxy import ProxyType, get_proxy_manager
 from src.proxy.base import ProxyManager
 from src.proxy.velocity import VelocityProxyManager
@@ -74,7 +74,7 @@ class TestGetProxyManager:
         """VelocityProxyManager should create its cache directory."""
         mgr = VelocityProxyManager(cache_dir=tmp_path / "test_cache")
         assert mgr._cache_dir == tmp_path / "test_cache"
-        assert isinstance(mgr._artifact_repo, ArtifactRepository)
+        assert isinstance(mgr._artifact_repo, PaperMCRepository)
 
     def test_bungeecord_returns_none(self):
         """BungeeCord is a placeholder — returns None."""
