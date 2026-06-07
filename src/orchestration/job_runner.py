@@ -16,6 +16,7 @@ from ..di import (
     get_build_service,
     get_config_writer,
     get_proxy_factory,
+    get_test_service,
 )
 from .job_orchestrator import JobOrchestrator
 
@@ -34,6 +35,7 @@ def _make_orchestrator() -> JobOrchestrator:
         game_directory=config.GAME_DIRECTORY,
         screenshots_dir=config.SCREENSHOTS_DIR,
         build_service=get_build_service(),
+        test_service=get_test_service(),
     )
 
 
