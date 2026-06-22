@@ -236,6 +236,7 @@ ALL_VERSIONS: list[Version] = [
     Version(major=26, minor=1, patch=0, protocol_version=775),
     Version(major=26, minor=1, patch=1, protocol_version=775),
     Version(major=26, minor=1, patch=2, protocol_version=775),
+    Version(major=26, minor=2, patch=0, protocol_version=776),
 ]
 
 # First version for each unique protocol version, derived from ALL_VERSIONS.

@@ -150,10 +150,12 @@ export const ALL_VERSIONS: MinecraftVersion[] = [
   { major: 1, minor: 21, patch: 9, protocolVersion: 773, label: "1.21.9" },
   { major: 1, minor: 21, patch: 10, protocolVersion: 773, label: "1.21.10" },
   { major: 1, minor: 21, patch: 11, protocolVersion: 774, label: "1.21.11" },
-  // 26.x (PicoLimbo versions)
+  // 26.1.x
   { major: 26, minor: 1, patch: 0, protocolVersion: 775, label: "26.1" },
   { major: 26, minor: 1, patch: 1, protocolVersion: 775, label: "26.1.1" },
   { major: 26, minor: 1, patch: 2, protocolVersion: 775, label: "26.1.2" },
+  // 26.2.x
+  { major: 26, minor: 2, patch: 0, protocolVersion: 776, label: "26.2" },
 ]
 
 export const GROUPED_VERSIONS = ALL_VERSIONS.reduce<
