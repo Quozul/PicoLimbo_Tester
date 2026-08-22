@@ -618,3 +618,73 @@ class TestCreateJobDirectReturn:
             plugin="legacy_plugin",
         )
         assert result["plugins"] == ["legacy_plugin"]
+
+
+# ---------------------------------------------------------------------------
+# 12. Event publication
+# ---------------------------------------------------------------------------
+
+class TestEventPublication:
+    """Tests that job writes publish events to the notifications hub."""
+
+    def test_create_job_publishes_job_event(self, patched_db):
+        from src import notifications
+
+        with patch.object(notifications, "job_events") as mock_hub:
+            result = db.create_job(
+                repo_url="https://github.com/foo/bar",
+                ref="main",
+                owner="foo",
+                commit_hash="abc123",
+                versions=["3.10"],
+            )
+
+        mock_hub.publish.assert_called_once()
+        published = mock_hub.publish.call_args.args[0]
+        assert published["job_id"] == result["job_id"]
+        assert published["status"] == "queued"
+
+    def test_update_job_publishes_updated_job_event(self, patched_db):
+        from src import notifications
+
+        created = db.create_job(
+            repo_url="https://github.com/foo/bar",
+            ref="main",
+            owner="foo",
+            commit_hash="abc123",
+            versions=["3.10"],
+        )
+
+        with patch.object(notifications, "job_events") as mock_hub:
+            db.update_job(created["job_id"], status="building")
+
+        mock_hub.publish.assert_called_once()
+        published = mock_hub.publish.call_args.args[0]
+        assert published["job_id"] == created["job_id"]
+        assert published["status"] == "building"
+
+    def test_update_job_missing_job_does_not_publish(self, patched_db):
+        from src import notifications
+
+        with patch.object(notifications, "job_events") as mock_hub:
+            result = db.update_job("nonexistent12345678", status="building")
+
+        assert result is None
+        mock_hub.publish.assert_not_called()
+
+    def test_update_job_without_fields_does_not_publish(self, patched_db):
+        """A fieldless update_job is a read and must not emit an event."""
+        from src import notifications
+
+        created = db.create_job(
+            repo_url="https://github.com/foo/bar",
+            ref="main",
+            owner="foo",
+            commit_hash="abc123",
+            versions=["3.10"],
+        )
+
+        with patch.object(notifications, "job_events") as mock_hub:
+            db.update_job(created["job_id"])
+
+        mock_hub.publish.assert_not_called()

@@ -1,10 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from "react"
-import {
-  createJobPoller,
-  retryJob,
-  type JobInfo,
-  type TestResult,
-} from "@/lib/api"
+import { useState, useEffect, useCallback } from "react"
+import { retryJob, type JobInfo, type TestResult } from "@/lib/api"
+import { onJobUpdate } from "@/lib/jobEvents"
 import { Button } from "@/components/ui/button"
 import { ALL_VERSIONS } from "@/lib/versions"
 import {
@@ -93,57 +89,39 @@ function formatEta(seconds?: number | null): string {
   return `${m}m ${s}s`
 }
 
+function buildScreenshotUrls(jobData: JobInfo): Map<string, string> {
+  const urlMap = new Map<string, string>()
+  Object.entries(jobData.test_results).forEach(([key, result]) => {
+    if (result.screenshot_path) {
+      urlMap.set(key, `/jobs/${jobData.job_id}/screenshots/${key}`)
+    }
+  })
+  return urlMap
+}
+
 export function JobProgress({ job }: JobProgressProps) {
   const [currentJob, setCurrentJob] = useState<JobInfo>(job)
   const [screenshotUrls, setScreenshotUrls] = useState<Map<string, string>>(
-    new Map()
+    () => buildScreenshotUrls(job)
   )
   const [loading, setLoading] = useState(false)
-
-  const pollerRef = useRef<ReturnType<typeof createJobPoller> | null>(null)
+  const [prevJob, setPrevJob] = useState<JobInfo>(job)
 
   // Sync internal state when the job prop changes
-  useEffect(() => {
+  if (job !== prevJob) {
+    setPrevJob(job)
     setCurrentJob(job)
-  }, [job])
+    setScreenshotUrls(buildScreenshotUrls(job))
+  }
 
-  // Poll for updates
+  // Subscribe to pushed job updates
   useEffect(() => {
-    pollerRef.current = createJobPoller(
-      currentJob.job_id,
-      (updated) => {
-        setCurrentJob(updated)
-        // Build screenshot URLs from test_results
-        const urlMap = new Map<string, string>()
-        Object.entries(updated.test_results).forEach(([key, result]) => {
-          if ((result as any).screenshot_path) {
-            urlMap.set(key, `/jobs/${updated.job_id}/screenshots/${key}`)
-          }
-        })
-        setScreenshotUrls(urlMap)
-      },
-      {
-        intervalMs: 2000,
-        onComplete: (finalJob) => {
-          setCurrentJob(finalJob)
-        },
-      }
-    )
-
-    // Initial screenshot URL build from test_results
-    {
-      const urlMap = new Map<string, string>()
-      Object.entries(job.test_results).forEach(([key, result]) => {
-        if ((result as any).screenshot_path) {
-          urlMap.set(key, `/jobs/${job.job_id}/screenshots/${key}`)
-        }
-      })
-      setScreenshotUrls(urlMap)
-    }
-
-    return () => {
-      pollerRef.current?.stop()
-    }
+    const jobId = currentJob.job_id
+    return onJobUpdate((updated) => {
+      if (updated.job_id !== jobId) return
+      setCurrentJob(updated)
+      setScreenshotUrls(buildScreenshotUrls(updated))
+    })
   }, [currentJob.job_id])
 
   // Determine which versions have been tested
@@ -174,11 +152,8 @@ export function JobProgress({ job }: JobProgressProps) {
     try {
       const updated = await retryJob(currentJob.job_id)
       setCurrentJob(updated)
-      // Restart polling
-      pollerRef.current?.stop()
-      pollerRef.current = createJobPoller(updated.job_id, (newJob) => {
-        setCurrentJob(newJob)
-      })
+      setScreenshotUrls(buildScreenshotUrls(updated))
+      // The WebSocket subscription (keyed by job id) keeps receiving updates
     } catch {
       // Error handling via UI
     } finally {

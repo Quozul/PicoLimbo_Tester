@@ -2,6 +2,8 @@
 
 import os
 import tempfile
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -560,3 +562,147 @@ class TestFrontendCatchAll:
         resp = client.get("/subdir/app.js")
         assert resp.status_code == 200
         assert resp.text == "console.log('hello')"
+
+
+# ===========================================================================
+# /ws/jobs — WebSocket job event stream
+# ===========================================================================
+
+
+def _wait_until(condition, timeout=2.0):
+    """Wait until condition() is truthy (the ASGI portal processes events on a thread)."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if condition():
+            return True
+        time.sleep(0.01)
+    return condition()
+
+
+def _receive_json(ws, timeout=10.0):
+    """Receive a JSON message, failing the test if the server stops sending.
+
+    TestClient blocks forever when the server endpoint dies without
+    sending, so the wait is bounded to keep regressions from hanging.
+    """
+    box: dict = {}
+
+    def _worker():
+        try:
+            box["message"] = ws.receive_json()
+        except BaseException as exc:
+            box["error"] = exc
+
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
+    thread.join(timeout)
+    if thread.is_alive():
+        pytest.fail(f"Timed out after {timeout}s waiting for a WebSocket message")
+    if "error" in box:
+        raise box["error"]
+    return box["message"]
+
+
+class TestJobsWebSocket:
+
+    def test_connect_receives_snapshot_of_current_jobs(
+        self, client, mock_database, mock_job_runner
+    ):
+        mock_database.list_jobs.return_value = [
+            _make_job(job_id="job-1", status="finished"),
+            _make_job(job_id="job-2", status="queued"),
+        ]
+        mock_job_runner._compute_eta.return_value = None
+
+        with client.websocket_connect("/ws/jobs") as ws:
+            message = _receive_json(ws)
+
+        assert message["type"] == "snapshot"
+        assert [j["job_id"] for j in message["jobs"]] == ["job-1", "job-2"]
+        assert message["jobs"][0]["status"] == "finished"
+        assert message["jobs"][0]["eta_seconds"] is None
+
+    def test_snapshot_jobs_include_serialized_test_results(
+        self, client, mock_database, mock_job_runner
+    ):
+        mock_database.list_jobs.return_value = [
+            _make_job(
+                job_id="job-1",
+                status="finished",
+                test_results={
+                    "1.20": {
+                        "version": "1.20",
+                        "passed": True,
+                        "screenshot_path": "/tmp/snap.png",
+                        "duration_seconds": 12.5,
+                    },
+                },
+            ),
+        ]
+        mock_job_runner._compute_eta.return_value = None
+
+        with client.websocket_connect("/ws/jobs") as ws:
+            message = _receive_json(ws)
+
+        result = message["jobs"][0]["test_results"]["1.20"]
+        assert result["passed"] is True
+        assert result["screenshot_path"] == "/tmp/snap.png"
+        assert result["duration_seconds"] == 12.5
+
+    def test_job_update_is_pushed_to_connected_clients(
+        self, client, mock_database, mock_job_runner
+    ):
+        from src import notifications
+
+        mock_database.list_jobs.return_value = []
+        mock_job_runner._compute_eta.return_value = None
+
+        with client.websocket_connect("/ws/jobs") as ws:
+            snapshot = _receive_json(ws)
+            assert snapshot["type"] == "snapshot"
+            assert snapshot["jobs"] == []
+
+            notifications.job_events.publish(
+                _make_job(
+                    job_id="job-1",
+                    status="building",
+                    current_step="building",
+                )
+            )
+            message = _receive_json(ws)
+
+        assert message["type"] == "job_update"
+        assert message["job"]["job_id"] == "job-1"
+        assert message["job"]["status"] == "building"
+        assert message["job"]["current_step"] == "building"
+
+    def test_pushed_updates_include_computed_eta(
+        self, client, mock_job_runner
+    ):
+        from src import notifications
+
+        mock_job_runner._compute_eta.return_value = 42
+
+        with client.websocket_connect("/ws/jobs") as ws:
+            _receive_json(ws)  # snapshot
+            notifications.job_events.publish(
+                _make_job(job_id="job-1", status="testing")
+            )
+            message = _receive_json(ws)
+
+        assert message["job"]["eta_seconds"] == 42
+
+    def test_disconnect_unsubscribes_client(self, client, mock_database):
+        from src import notifications
+
+        mock_database.list_jobs.return_value = []
+
+        with client.websocket_connect("/ws/jobs") as ws:
+            _receive_json(ws)
+            assert _wait_until(
+                lambda: notifications.job_events.subscriber_count >= 1
+            )
+
+        assert _wait_until(
+            lambda: notifications.job_events.subscriber_count == 0
+        )

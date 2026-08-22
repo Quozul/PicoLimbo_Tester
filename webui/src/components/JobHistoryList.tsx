@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react"
 import { listJobs, type JobInfo } from "@/lib/api"
+import { onJobUpdate, onJobSnapshot } from "@/lib/jobEvents"
 import { cn } from "@/lib/utils"
 import { CheckCircle2, AlertTriangle, Loader2, Circle } from "lucide-react"
 
@@ -70,6 +71,13 @@ function formatDuration(ms: number): string {
   return `${hours}h ${minutes}m`
 }
 
+function sortJobs(jobs: JobInfo[]): JobInfo[] {
+  return [...jobs].sort(
+    (a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )
+}
+
 export function JobHistoryList({
   activeJob,
   onSelectJob,
@@ -77,25 +85,38 @@ export function JobHistoryList({
   const [jobs, setJobs] = useState<JobInfo[]>([])
   const [loading, setLoading] = useState(true)
 
-  const fetchJobs = useCallback(async () => {
-    try {
-      const list = await listJobs({ limit: 50 })
-      list.sort(
-        (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      )
-      setJobs(list)
-      setLoading(false)
-    } catch {
-      setLoading(false)
+  // Initial load, then live updates are pushed over WebSocket
+  useEffect(() => {
+    let cancelled = false
+    listJobs({ limit: 50 })
+      .then((list) => {
+        if (cancelled) return
+        setJobs(sortJobs(list))
+        setLoading(false)
+      })
+      .catch(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
     }
   }, [])
 
   useEffect(() => {
-    fetchJobs()
-    const interval = setInterval(fetchJobs, 5000)
-    return () => clearInterval(interval)
-  }, [fetchJobs])
+    const unsubscribeUpdates = onJobUpdate((updated) => {
+      setJobs((prev) =>
+        sortJobs([updated, ...prev.filter((j) => j.job_id !== updated.job_id)])
+      )
+    })
+    const unsubscribeSnapshot = onJobSnapshot((list) => {
+      setJobs(sortJobs(list))
+      setLoading(false)
+    })
+    return () => {
+      unsubscribeUpdates()
+      unsubscribeSnapshot()
+    }
+  }, [])
 
   const handleSelect = useCallback(
     (job: JobInfo) => {

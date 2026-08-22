@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from . import config
+from . import notifications
 
 DB_PATH = config.DB_PATH
 
@@ -142,7 +143,7 @@ def create_job(
         )
         conn.commit()
     # Return the data directly instead of re-fetching
-    return {
+    job = {
         "job_id": job_id,
         "repo_url": repo_url,
         "ref": ref,
@@ -162,6 +163,8 @@ def create_job(
         "created_at": now,
         "updated_at": now,
     }
+    notifications.job_events.publish(job)
+    return job
 
 
 def get_job_by_id(job_id: str) -> Optional[dict]:
@@ -240,7 +243,10 @@ def update_job(job_id: str, **fields) -> Optional[dict]:
             f"UPDATE jobs SET {set_clause} WHERE job_id = ?", values
         )
         conn.commit()
-    return get_job_by_id(job_id)
+    updated = get_job_by_id(job_id)
+    if updated is not None:
+        notifications.job_events.publish(updated)
+    return updated
 
 
 def get_queued_jobs(limit: int = 100) -> list[dict]:

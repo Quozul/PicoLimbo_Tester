@@ -1,46 +1,48 @@
 import { useState, useEffect, useCallback } from "react"
-import {
-  createJobPoller,
-  type JobInfo,
-} from "@/lib/api"
+import { type JobInfo } from "@/lib/api"
+import { onJobUpdate } from "@/lib/jobEvents"
 import { cn } from "@/lib/utils"
 import { ALL_VERSIONS } from "@/lib/versions"
-import { Eye, EyeOff, Loader2, X, Maximize2 } from "lucide-react"
+import { Eye, EyeOff, X, Maximize2 } from "lucide-react"
 
 interface ScreenshotViewerProps {
   job: JobInfo
 }
 
+function buildScreenshotMap(jobData: JobInfo): Map<string, string> {
+  const map = new Map<string, string>()
+  Object.entries(jobData.test_results).forEach(([key, result]) => {
+    if (result.screenshot_path) {
+      map.set(key, `/jobs/${jobData.job_id}/screenshots/${key}`)
+    }
+  })
+  return map
+}
+
 export function ScreenshotViewer({ job }: ScreenshotViewerProps) {
   const [screenshotUrls, setScreenshotUrls] = useState<Map<string, string>>(
-    new Map()
+    () => buildScreenshotMap(job)
   )
   const [visible, setVisible] = useState<Set<string>>(new Set())
   const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(
     null
   )
-  const [loading, setLoading] = useState(true)
+  const [prevJob, setPrevJob] = useState<JobInfo>(job)
 
-  const buildScreenshotMap = useCallback((jobData: JobInfo) => {
-    const map = new Map<string, string>()
-    Object.entries(jobData.test_results).forEach(([key, result]) => {
-      if ((result as any).screenshot_path) {
-        map.set(key, `/jobs/${jobData.job_id}/screenshots/${key}`)
-      }
-    })
-    setScreenshotUrls(map)
-  }, [])
+  // Sync screenshot URLs when the job prop changes
+  if (job !== prevJob) {
+    setPrevJob(job)
+    setScreenshotUrls(buildScreenshotMap(job))
+  }
 
+  // Subscribe to pushed job updates
   useEffect(() => {
-    buildScreenshotMap(job)
-    setLoading(false)
-
-    const poller = createJobPoller(job.job_id, (updatedJob) => {
-      buildScreenshotMap(updatedJob)
+    const jobId = job.job_id
+    return onJobUpdate((updatedJob) => {
+      if (updatedJob.job_id !== jobId) return
+      setScreenshotUrls(buildScreenshotMap(updatedJob))
     })
-
-    return () => poller.stop()
-  }, [job.job_id, buildScreenshotMap])
+  }, [job.job_id])
 
   const toggleVisible = useCallback((version: string) => {
     setVisible((prev) => {
@@ -74,14 +76,6 @@ export function ScreenshotViewer({ job }: ScreenshotViewerProps) {
         verA.patch - verB.patch
       )
     })
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-8">
-        <Loader2 className="size-5 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
 
   if (screenshotUrls.size === 0) {
     return (

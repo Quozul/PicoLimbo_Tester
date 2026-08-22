@@ -1,17 +1,20 @@
 """FastAPI application for the PicoLimbo Build API."""
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, WebSocket, WebSocketDisconnect
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import config, database
 from .builder import engine, worker
-from .models import JobCreate, JobInfo, TestResult
+from .models import JobCreate, JobInfo
+from .notifications import job_events
 from .orchestration import job_runner
 
 logging.basicConfig(level=logging.INFO)
@@ -36,6 +39,27 @@ def _startup_queue_worker() -> None:
     """Start the build queue worker on application startup."""
     app.state.queue_thread = worker.start_queue_worker()
     logger.info("Build queue worker started")
+
+
+def _job_response(job: dict) -> dict:
+    """Build the API representation of a job row.
+
+    Shared by the REST endpoints and the WebSocket push endpoint.
+    Returns a plain JSON-serializable dict (test_results as nested dicts).
+    """
+    response = dict(job)
+    response["test_results"] = {
+        k: {
+            "version": v.get("version", k),
+            "passed": v.get("passed", False),
+            "screenshot_path": v.get("screenshot_path"),
+            "duration_seconds": v.get("duration_seconds"),
+            "error": v.get("error"),
+        }
+        for k, v in (job.get("test_results") or {}).items()
+    }
+    response["eta_seconds"] = job_runner._compute_eta(job)
+    return response
 
 
 @app.get("/health")
@@ -87,23 +111,7 @@ def get_job(job_id: str):
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    # Compute ETA if in testing phase
-    eta = job_runner._compute_eta(job)
-
-    # Build response
-    response = dict(job)
-    response["test_results"] = {
-        k: TestResult(
-            version=v.get("version", k),
-            passed=v.get("passed", False),
-            screenshot_path=v.get("screenshot_path"),
-            duration_seconds=v.get("duration_seconds"),
-            error=v.get("error"),
-        )
-        for k, v in (job.get("test_results") or {}).items()
-    }
-    response["eta_seconds"] = eta
-    return response
+    return _job_response(job)
 
 
 @app.get(
@@ -174,26 +182,43 @@ def list_jobs(
     - `limit`: max number of results (default 100)
     """
     jobs = database.list_jobs(status=status, limit=limit)
+    return [_job_response(job) for job in jobs]
 
-    # Compute ETA for each job in testing phase
-    result = []
-    for job in jobs:
-        eta = job_runner._compute_eta(job)
-        response = dict(job)
-        response["test_results"] = {
-            k: TestResult(
-                version=v.get("version", k),
-                passed=v.get("passed", False),
-                screenshot_path=v.get("screenshot_path"),
-                duration_seconds=v.get("duration_seconds"),
-                error=v.get("error"),
+
+@app.websocket("/ws/jobs")
+async def jobs_events(websocket: WebSocket):
+    """Push job status updates to connected clients.
+
+    On connect the client receives a ``snapshot`` message with the current
+    state of all jobs, followed by a ``job_update`` message each time a job
+    is created or updated:
+
+    - ``{"type": "snapshot", "jobs": [job, ...]}``
+    - ``{"type": "job_update", "job": job}``
+    """
+    await websocket.accept()
+    job_events.bind_loop(asyncio.get_running_loop())
+    queue = job_events.subscribe()
+    try:
+        await websocket.send_json(
+            jsonable_encoder(
+                {
+                    "type": "snapshot",
+                    "jobs": [_job_response(job) for job in database.list_jobs(limit=100)],
+                }
             )
-            for k, v in (job.get("test_results") or {}).items()
-        }
-        response["eta_seconds"] = eta
-        result.append(response)
-
-    return result
+        )
+        while True:
+            job = await queue.get()
+            await websocket.send_json(
+                jsonable_encoder({"type": "job_update", "job": _job_response(job)})
+            )
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        logger.exception("WebSocket connection error")
+    finally:
+        job_events.unsubscribe(queue)
 
 
 # ─── Plugin Endpoints ────────────────────────────────────────────────────────

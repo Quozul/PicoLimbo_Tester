@@ -95,15 +95,6 @@ export async function createJob(input: JobCreateInput): Promise<JobInfo> {
 }
 
 /**
- * GET /jobs/{job_id}
- * Get job information with polling support.
- */
-export async function getJob(jobId: string): Promise<JobInfo> {
-  const data = await request<JobInfo>(`GET`, `/jobs/${jobId}`)
-  return JobInfoSchema.parse(data)
-}
-
-/**
  * GET /jobs
  * List all jobs, optionally filtered by status.
  */
@@ -184,45 +175,4 @@ export async function deletePlugin(
  */
 export async function healthCheck(): Promise<{ status: string }> {
   return request<{ status: string }>("GET", "/health")
-}
-
-// ─── Polling Utilities ─────────────────────────────────────────────────────────
-
-export type JobStatusListener = (job: JobInfo) => void
-
-export function createJobPoller(
-  jobId: string,
-  onStatusChange: JobStatusListener,
-  options?: {
-    intervalMs?: number
-    onComplete?: (job: JobInfo) => void
-  }
-): { stop: () => void } {
-  const { intervalMs = 2000, onComplete } = options ?? {}
-  let running = true
-
-  const poll = async () => {
-    while (running) {
-      try {
-        const job = await getJob(jobId)
-        onStatusChange(job)
-        if (["finished", "failed"].includes(job.status)) {
-          onComplete?.(job)
-          running = false
-          return
-        }
-      } catch {
-        // Silently ignore poll errors (e.g., network issues)
-      }
-      await new Promise((resolve) => setTimeout(resolve, intervalMs))
-    }
-  }
-
-  poll()
-
-  return {
-    stop: () => {
-      running = false
-    },
-  }
 }
