@@ -14,6 +14,8 @@ export const JobCreateSchema = z.object({
   forwarding_method: z.string().optional().default("modern"),
   plugins: z.array(z.string()).optional(),
   login_wait_timeout: z.number().int().positive().optional().default(30),
+  schematic_file: z.string().nullable().optional(),
+  view_distance: z.number().int().positive().nullable().optional(),
 })
 
 export const TestResultSchema = z.object({
@@ -41,6 +43,8 @@ export const JobInfoSchema = z.object({
   updated_at: z.string(),
   plugins: z.array(z.string()).optional(),
   login_wait_timeout: z.number().int().positive().optional().default(30),
+  schematic_file: z.string().nullable().optional(),
+  view_distance: z.number().int().positive().nullable().optional(),
 })
 
 export type JobCreateInput = z.infer<typeof JobCreateSchema>
@@ -166,6 +170,57 @@ export async function deletePlugin(
   name: string
 ): Promise<{ deleted: boolean }> {
   const data = await request<{ deleted: boolean }>(`DELETE`, `/plugins/${name}`)
+  return data
+}
+
+/**
+ * POST /schematics/upload
+ * Upload a PicoLimbo world schematic .schem file.
+ */
+export async function uploadSchematic(
+  file: File
+): Promise<{ name: string; status: string }> {
+  const formData = new FormData()
+  formData.append("schematic", file)
+  const url = `${API_BASE}/schematics/upload`
+  const response = await fetch(url, {
+    method: "POST",
+    body: formData,
+  })
+
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({}))
+    throw new Error(errorBody.detail || `Upload error: ${response.status}`)
+  }
+
+  return response.json()
+}
+
+/**
+ * GET /schematics
+ * List all uploaded schematics.
+ */
+export async function listSchematics(): Promise<
+  { name: string; status: string }[]
+> {
+  const data = await request<{ name: string; status: string }[]>(
+    "GET",
+    "/schematics"
+  )
+  return data
+}
+
+/**
+ * DELETE /schematics/{name}
+ * Delete an uploaded schematic.
+ */
+export async function deleteSchematic(
+  name: string
+): Promise<{ deleted: boolean }> {
+  const data = await request<{ deleted: boolean }>(
+    `DELETE`,
+    `/schematics/${name}`
+  )
   return data
 }
 

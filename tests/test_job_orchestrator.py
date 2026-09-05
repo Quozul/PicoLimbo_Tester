@@ -41,7 +41,7 @@ def _make_job_dict(
         "status": status,
         "commit_hash": commit_hash,
         "artifact_path": artifact_path,
-        "versions": versions or ["1.21.8"],
+        "versions": ["1.21.8"] if versions is None else versions,
         "proxy": proxy_type,
         "repo_url": "https://github.com/Quozul/PicoLimbo.git",
         "ref": "main",
@@ -434,3 +434,68 @@ class TestComputeEta:
         orchestrator = self._make_eta_orchestrator()
         job = _make_job_dict(status="testing", versions=[])
         assert orchestrator._compute_eta(job) is None
+
+
+# ---------------------------------------------------------------------------
+# execute() — empty versions expansion
+# ---------------------------------------------------------------------------
+
+
+class TestExecuteEmptyVersions:
+    """Jobs without explicit versions are expanded to ALL_VERSIONS."""
+
+    def test_empty_versions_expanded_to_all_versions(self):
+        """A job with versions=[] runs every known version (no crash)."""
+        import json as jsonlib
+
+        from src.versions import ALL_VERSIONS
+
+        mock_build_service = MagicMock(spec=BuildService)
+        result = MagicMock()
+        result.artifact_path.value = Path("/tmp/builds/job-1/pico_limbo")
+        mock_build_service.build.return_value = result
+
+        mock_virtual_input_cls = MagicMock()
+        mock_server_context = MagicMock()
+        mock_test_service = _make_test_service_mock({"version": "1.21.8", "passed": True})
+
+        job_dict, mock_setup_cls, mock_db = _make_mocks(
+            _make_job_dict(job_id="job-empty", versions=[])
+        )
+        mock_setup_cls.return_value.setup.return_value = mock_server_context
+
+        with patch(
+            "src.orchestration.job_orchestrator.ServerSetupService",
+            mock_setup_cls,
+        ), patch(
+            "src.orchestration.job_orchestrator.database",
+            mock_db,
+        ):
+            orchestrator = _build_orchestrator(
+                mock_build_service,
+                mock_test_service,
+                mock_virtual_input_cls,
+                mock_server_context,
+                mock_setup_cls,
+                mock_db,
+            )
+            orchestrator.execute("job-empty")
+
+        # The full version list is persisted
+        expected_versions = jsonlib.dumps([str(v) for v in ALL_VERSIONS])
+        version_updates = [
+            c for c in mock_db.update_job.call_args_list
+            if c.kwargs.get("versions") is not None
+        ]
+        assert version_updates, "versions were never persisted"
+        assert version_updates[0].kwargs["versions"] == expected_versions
+
+        # Every version was tested
+        assert mock_test_service.test_version.call_count == len(ALL_VERSIONS)
+
+        # The job finished
+        final_updates = [
+            c for c in mock_db.update_job.call_args_list
+            if c.kwargs.get("status") == "finished"
+        ]
+        assert final_updates

@@ -17,6 +17,7 @@ ALLOWED_UPDATE_COLUMNS: frozenset[str] = frozenset({
     "status", "artifact_path", "current_step", "versions",
     "test_results", "error_message", "eta_seconds",
     "proxy", "forwarding_method", "plugins", "login_wait_timeout",
+    "schematic_file", "view_distance",
     "created_at", "updated_at",
 })
 
@@ -55,6 +56,8 @@ def migrate(db_path: Path | None = None) -> None:
                 plugin TEXT,
                 plugins TEXT,
                 login_wait_timeout INTEGER NOT NULL DEFAULT 30,
+                schematic_file TEXT,
+                view_distance INTEGER,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
@@ -82,6 +85,16 @@ def migrate(db_path: Path | None = None) -> None:
         # Migration: add login_wait_timeout column
         try:
             conn.execute("ALTER TABLE jobs ADD COLUMN login_wait_timeout INTEGER NOT NULL DEFAULT 30")
+        except sqlite3.OperationalError:
+            pass
+        # Migration: add schematic_file column
+        try:
+            conn.execute("ALTER TABLE jobs ADD COLUMN schematic_file TEXT")
+        except sqlite3.OperationalError:
+            pass
+        # Migration: add view_distance column
+        try:
+            conn.execute("ALTER TABLE jobs ADD COLUMN view_distance INTEGER")
         except sqlite3.OperationalError:
             pass
         conn.commit()
@@ -123,6 +136,8 @@ def create_job(
     plugin: Optional[str] = None,
     plugins: Optional[list[str]] = None,
     login_wait_timeout: int = 30,
+    schematic_file: Optional[str] = None,
+    view_distance: Optional[int] = None,
 ) -> dict:
     """Create a new job. Raises sqlite3.IntegrityError if duplicate.
 
@@ -136,10 +151,10 @@ def create_job(
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO jobs (job_id, repo_url, ref, owner, commit_hash, status, current_step, versions, test_results, error_message, eta_seconds, proxy, forwarding_method, plugins, login_wait_timeout, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 'queued', NULL, ?, '{}', NULL, NULL, ?, ?, ?, ?, ?, ?)
+            INSERT INTO jobs (job_id, repo_url, ref, owner, commit_hash, status, current_step, versions, test_results, error_message, eta_seconds, proxy, forwarding_method, plugins, login_wait_timeout, schematic_file, view_distance, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'queued', NULL, ?, '{}', NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (job_id, repo_url, ref, owner, commit_hash, json.dumps(versions), proxy, forwarding_method, plugins_json, login_wait_timeout, now, now),
+            (job_id, repo_url, ref, owner, commit_hash, json.dumps(versions), proxy, forwarding_method, plugins_json, login_wait_timeout, schematic_file, view_distance, now, now),
         )
         conn.commit()
     # Return the data directly instead of re-fetching
@@ -160,6 +175,8 @@ def create_job(
         "forwarding_method": forwarding_method,
         "plugins": plugins or [],
         "login_wait_timeout": login_wait_timeout,
+        "schematic_file": schematic_file,
+        "view_distance": view_distance,
         "created_at": now,
         "updated_at": now,
     }
@@ -306,6 +323,8 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
         "forwarding_method": row["forwarding_method"] if "forwarding_method" in cols else "modern",
         "plugins": json.loads(row["plugins"]) if "plugins" in cols and row["plugins"] else [],
         "login_wait_timeout": row["login_wait_timeout"] if "login_wait_timeout" in cols else 30,
+        "schematic_file": row["schematic_file"] if "schematic_file" in cols else None,
+        "view_distance": row["view_distance"] if "view_distance" in cols else None,
     }
 
 

@@ -44,6 +44,8 @@ class Job:
     forwarding_method: ForwardingMethod
     plugins: list[str] | None
     login_wait_timeout: int
+    schematic_file: str | None = None
+    view_distance: int | None = None
     test_results: dict[str, TestResult] = field(default_factory=dict)
     artifact_path: ArtifactPath | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -127,6 +129,8 @@ class Job:
             "forwarding_method": self.forwarding_method.value,
             "plugins": self.plugins,
             "login_wait_timeout": self.login_wait_timeout,
+            "schematic_file": self.schematic_file,
+            "view_distance": self.view_distance,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }
@@ -162,6 +166,8 @@ class Job:
             forwarding_method=ForwardingMethod(data["forwarding_method"]),
             plugins=data.get("plugins"),
             login_wait_timeout=data.get("login_wait_timeout", 30),
+            schematic_file=data.get("schematic_file"),
+            view_distance=data.get("view_distance"),
             test_results={
                 k: TestResult.from_dict(v, k)
                 for k, v in data.get("test_results", {}).items()

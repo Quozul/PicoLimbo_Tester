@@ -74,9 +74,21 @@ class TestTOMLHelpers:
         result = _manual_toml_dump({"outer": {"inner": "val"}})
         expected = textwrap.dedent("""\
             [outer]
-              inner = "val"
+            inner = "val"
         """).strip()
         assert result == expected
+
+    def test_manual_dump_nested_tables_use_dotted_headers(self):
+        """Two-level nesting must emit a dotted [a.b] header (valid TOML)."""
+        import tomllib
+
+        result = _manual_toml_dump({"world": {"experimental": {"view_distance": 2}}})
+        assert "[world]" in result
+        assert "[world.experimental]" in result
+        # The output must round-trip through a real TOML parser
+        assert tomllib.loads(result) == {
+            "world": {"experimental": {"view_distance": 2}}
+        }
 
     def test_manual_dump_mixed(self):
         result = _manual_toml_dump({
@@ -375,3 +387,94 @@ class TestWriteVelocityToml:
         finally:
             if saved is not None:
                 sys.modules["tomli_w"] = saved
+
+
+# ---------------------------------------------------------------------------
+# build_server_config (PicoLimbo server.toml)
+# ---------------------------------------------------------------------------
+
+class TestBuildServerConfig:
+    def test_defaults(self):
+        """No arguments yields an empty schematic, default view distance, no bind."""
+        from src.infrastructure.config_writer import build_server_config
+
+        config = build_server_config()
+        assert config == {
+            "world": {
+                "experimental": {
+                    "view_distance": 2,
+                    "schematic_file": "",
+                    "lock_time": False,
+                }
+            }
+        }
+
+    def test_with_schematic_and_view_distance(self):
+        from src.infrastructure.config_writer import build_server_config
+
+        config = build_server_config(schematic_file="spawn.schem", view_distance=8)
+        experimental = config["world"]["experimental"]
+        assert experimental["schematic_file"] == "spawn.schem"
+        assert experimental["view_distance"] == 8
+        assert experimental["lock_time"] is False
+
+    def test_empty_string_schematic_disables_loading(self):
+        from src.infrastructure.config_writer import build_server_config
+
+        config = build_server_config(schematic_file="")
+        assert config["world"]["experimental"]["schematic_file"] == ""
+
+    def test_with_bind(self):
+        from src.infrastructure.config_writer import build_server_config
+
+        config = build_server_config(bind="127.0.0.1:30066")
+        assert config["bind"] == "127.0.0.1:30066"
+
+
+class TestWriteServerToml:
+    def test_writes_valid_toml_with_experimental_table(self, tmp_path):
+        """The generated file must parse and carry all three experimental keys."""
+        import tomllib
+        from src.infrastructure.config_writer import ConfigWriter, build_server_config
+
+        out = tmp_path / "server.toml"
+        writer = ConfigWriter()
+        writer.write_server_toml(out, build_server_config(schematic_file="spawn.schem"))
+
+        with open(out, "rb") as f:
+            content = tomllib.load(f)
+
+        experimental = content["world"]["experimental"]
+        # PicoLimbo requires all three keys in [world.experimental]
+        assert set(experimental.keys()) == {"view_distance", "schematic_file", "lock_time"}
+        assert experimental["schematic_file"] == "spawn.schem"
+        assert experimental["view_distance"] == 2
+        assert experimental["lock_time"] is False
+
+    def test_writes_bind_when_provided(self, tmp_path):
+        import tomllib
+        from src.infrastructure.config_writer import ConfigWriter, build_server_config
+
+        out = tmp_path / "server.toml"
+        writer = ConfigWriter()
+        writer.write_server_toml(
+            out, build_server_config(bind="127.0.0.1:30066")
+        )
+
+        with open(out, "rb") as f:
+            content = tomllib.load(f)
+
+        assert content["bind"] == "127.0.0.1:30066"
+
+    def test_no_bind_key_when_none(self, tmp_path):
+        import tomllib
+        from src.infrastructure.config_writer import ConfigWriter, build_server_config
+
+        out = tmp_path / "server.toml"
+        writer = ConfigWriter()
+        writer.write_server_toml(out, build_server_config())
+
+        with open(out, "rb") as f:
+            content = tomllib.load(f)
+
+        assert "bind" not in content

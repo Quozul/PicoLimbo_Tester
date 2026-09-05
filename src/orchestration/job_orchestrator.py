@@ -94,21 +94,10 @@ class JobOrchestrator:
 
         # Resolve versions (always ensure strings for downstream consumers)
         if not job.versions:
-            from ..versions import ALL_VERSIONS
+            from ..versions import ALL_VERSIONS, Version
 
             versions = [str(v) for v in ALL_VERSIONS]
-            job = Job(
-                job_id=job.job_id,
-                repo_url=job.repo_url,
-                ref=job.ref,
-                owner=job.owner,
-                versions=versions,
-                proxy_type=job.proxy_type,
-                forwarding_method=job.forwarding_method,
-                plugins=job.plugins,
-                login_wait_timeout=job.login_wait_timeout,
-                mc_version=job.mc_version,
-            )
+            job.versions = [Version.from_string(v) for v in versions]
             database.update_job(job_id, versions=json.dumps(versions))
         else:
             versions = [str(v) for v in job.versions]

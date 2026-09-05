@@ -66,6 +66,8 @@ def create_job(
     plugin: Optional[str] = None,
     plugins: Optional[list[str]] = None,
     login_wait_timeout: int = 30,
+    schematic_file: Optional[str] = None,
+    view_distance: Optional[int] = None,
 ) -> dict:
     """Always create a new job.
 
@@ -89,6 +91,7 @@ def create_job(
     job = database.create_job(
         repo_url, ref, owner, commit_hash, versions or [],
         proxy, forwarding_method, plugin, plugins, login_wait_timeout,
+        schematic_file, view_distance,
     )
     logger.info("Created new job %s for %s@%s", job["job_id"], repo_url, ref)
     return job

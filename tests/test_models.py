@@ -55,6 +55,20 @@ class TestJobCreate:
         assert job.plugins == ["plugin1.jar", "plugin2.jar"]
         assert job.login_wait_timeout == 60
 
+    def test_defaults_schematic_fields_to_none(self):
+        job = JobCreate()
+        assert job.schematic_file is None
+        assert job.view_distance is None
+
+    def test_accepts_schematic_fields(self):
+        job = JobCreate(schematic_file="spawn.schem", view_distance=8)
+        assert job.schematic_file == "spawn.schem"
+        assert job.view_distance == 8
+
+    def test_rejects_non_positive_view_distance(self):
+        with pytest.raises(ValidationError):
+            JobCreate(view_distance=0)
+
 
 class TestTestResultModel:
     """Tests for the TestResult response model."""

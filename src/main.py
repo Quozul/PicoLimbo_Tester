@@ -82,11 +82,19 @@ def create_job(body: JobCreate):
     - Build: reuses artifact if already built for this commit hash
     - Tests: skips versions already tested for this commit hash
     """
+    if body.schematic_file and not (config.SCHEMATICS_DIR / Path(body.schematic_file).name).is_file():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Schematic '{body.schematic_file}' not found. Upload it first.",
+        )
+
     try:
         job = engine.create_job(
             body.repo_url, body.ref, body.versions, body.proxy,
             body.forwarding_method, plugins=body.plugins,
             login_wait_timeout=body.login_wait_timeout,
+            schematic_file=body.schematic_file,
+            view_distance=body.view_distance,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -286,6 +294,79 @@ def delete_plugin(name: str):
 
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Plugin not found")
+
+    if not file_path.is_file():
+        raise HTTPException(status_code=400, detail="Not a file")
+
+    file_path.unlink()
+    return {"deleted": True}
+
+
+# ─── Schematic Endpoints ───────────────────────────────────────────────────────
+
+
+def _ensure_schematics_dir() -> None:
+    """Ensure the schematics directory exists."""
+    config.SCHEMATICS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@app.post(
+    "/schematics/upload",
+    status_code=201,
+    summary="Upload a world schematic (.schem file)",
+)
+async def upload_schematic(schematic: UploadFile = File(...)):
+    """Upload a PicoLimbo schematic .schem file (SpongePowered format v2).
+
+    Saves the file to the schematics directory and returns its name.
+    """
+    _ensure_schematics_dir()
+
+    if not schematic.filename or not schematic.filename.endswith(".schem"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only .schem files are allowed",
+        )
+
+    file_path = config.SCHEMATICS_DIR / schematic.filename
+
+    # Read and save the file
+    content = await schematic.read()
+    file_path.write_bytes(content)
+
+    return {"name": schematic.filename, "status": "ready"}
+
+
+@app.get(
+    "/schematics",
+    summary="List all uploaded schematics",
+)
+def list_schematics():
+    """List all uploaded schematic .schem files."""
+    _ensure_schematics_dir()
+
+    schematics = []
+    for path in sorted(config.SCHEMATICS_DIR.iterdir()):
+        if path.is_file() and path.suffix == ".schem":
+            schematics.append({"name": path.name, "status": "ready"})
+
+    return schematics
+
+
+@app.delete(
+    "/schematics/{name}",
+    summary="Delete an uploaded schematic",
+)
+def delete_schematic(name: str):
+    """Delete an uploaded schematic .schem file.
+
+    Returns 404 if the schematic does not exist.
+    """
+    safe_name = Path(name).name  # Sanitize against path traversal
+    file_path = config.SCHEMATICS_DIR / safe_name
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Schematic not found")
 
     if not file_path.is_file():
         raise HTTPException(status_code=400, detail="Not a file")

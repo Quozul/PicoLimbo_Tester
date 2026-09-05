@@ -30,6 +30,9 @@ PROXY_CACHE_DIR = Path("/app/cache/proxies")
 # Directory containing plugin JAR files to be copied into the proxy's plugins/ folder
 PLUGINS_DIR = Path("/app/plugins")
 
+# Directory containing uploaded schematic (.schem) files staged into job workspaces
+SCHEMATICS_DIR = Path("/app/schematics")
+
 # Directory for embedded web UI static assets
 _SRC_DIR = Path(__file__).resolve().parent
 WEBUI_DIR = _SRC_DIR.parent / "webui-dist"
@@ -111,11 +114,6 @@ _QUIT_REGION_NEWER = (519, 588, 294, 60)
 # Coordinates differ slightly due to different GUI rendering.
 _QUIT_REGION_OLDER = (517, 600, 294, 60)
 
-# ─── PicoLimbo Server Config ─────────────────────────────────────────────────
-
-# Default PicoLimbo config content for direct (no-proxy) mode
-SERVER_CONFIG_CONTENT = 'bind = "0.0.0.0:25565"\n'
-
 # ─── Proxy ────────────────────────────────────────────────────────────────────
 
 # Velocity config file name
@@ -164,6 +162,7 @@ class Config:
         screenshots_dir: Path | None = None,
         proxy_cache_dir: Path | None = None,
         plugins_dir: Path | None = None,
+        schematics_dir: Path | None = None,
         webui_dir: Path | None = None,
         db_path: Path | None = None,
         server_address: str | None = None,
@@ -185,7 +184,6 @@ class Config:
         click_server_button_1_8_plus: tuple[int, int] | None = None,
         quit_region_newer: tuple[int, int, int, int] | None = None,
         quit_region_older: tuple[int, int, int, int] | None = None,
-        server_config_content: str | None = None,
         velocity_config_filename: str | None = None,
     ):
         """Initialize config with defaults, then override with provided values."""
@@ -195,6 +193,7 @@ class Config:
         self._screenshots_dir = screenshots_dir or SCREENSHOTS_DIR
         self._proxy_cache_dir = proxy_cache_dir or PROXY_CACHE_DIR
         self._plugins_dir = plugins_dir or PLUGINS_DIR
+        self._schematics_dir = schematics_dir or SCHEMATICS_DIR
         self._webui_dir = webui_dir or WEBUI_DIR
         self._db_path = db_path or DB_PATH
         self._server_address = server_address or SERVER_ADDRESS
@@ -216,7 +215,6 @@ class Config:
         self._click_server_button_1_8_plus = click_server_button_1_8_plus or CLICK_SERVER_BUTTON_1_8_PLUS
         self._quit_region_newer = quit_region_newer or _QUIT_REGION_NEWER
         self._quit_region_older = quit_region_older or _QUIT_REGION_OLDER
-        self._server_config_content = server_config_content or SERVER_CONFIG_CONTENT
         self._velocity_config_filename = velocity_config_filename or VELOCITY_CONFIG_FILENAME
 
     @property
@@ -242,6 +240,10 @@ class Config:
     @property
     def plugins_dir(self) -> Path:
         return self._plugins_dir
+
+    @property
+    def schematics_dir(self) -> Path:
+        return self._schematics_dir
 
     @property
     def webui_dir(self) -> Path:
@@ -326,10 +328,6 @@ class Config:
     @property
     def quit_region_older(self) -> tuple[int, int, int, int]:
         return self._quit_region_older
-
-    @property
-    def server_config_content(self) -> str:
-        return self._server_config_content
 
     @property
     def velocity_config_filename(self) -> str:

@@ -37,6 +37,15 @@ class JobCreate(BaseModel):
         default=30,
         description="Seconds to wait after joining the server before taking a screenshot (default: 30)",
     )
+    schematic_file: Optional[str] = Field(
+        default=None,
+        description="Name of an uploaded schematic (.schem) file to load at spawn; null or empty disables schematic loading",
+    )
+    view_distance: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Number of chunks sent to clients (default: 2); should match or exceed the schematic's size in chunks",
+    )
 
 
 class TestResult(BaseModel):
@@ -67,3 +76,5 @@ class JobInfo(BaseModel):
     updated_at: datetime
     plugins: list[str] = []
     login_wait_timeout: int = 30
+    schematic_file: Optional[str] = None
+    view_distance: Optional[int] = None

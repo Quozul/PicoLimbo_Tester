@@ -38,6 +38,8 @@ def _setup_test_db(conn: sqlite3.Connection) -> None:
             plugin TEXT,
             plugins TEXT,
             login_wait_timeout INTEGER NOT NULL DEFAULT 30,
+            schematic_file TEXT,
+            view_distance INTEGER,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )
@@ -94,6 +96,35 @@ class TestCreateJob:
         assert result["error_message"] is None
         assert result["current_step"] is None
         assert result["eta_seconds"] is None
+
+    def test_create_job_with_schematic_fields(self, patched_db):
+        """schematic_file and view_distance are persisted and readable."""
+        result = db.create_job(
+            repo_url="https://github.com/foo/bar",
+            ref="main",
+            owner="foo",
+            commit_hash="abc123def456",
+            versions=["1.21.8"],
+            schematic_file="spawn.schem",
+            view_distance=8,
+        )
+        assert result["schematic_file"] == "spawn.schem"
+        assert result["view_distance"] == 8
+
+        fetched = db.get_job_by_id(result["job_id"])
+        assert fetched["schematic_file"] == "spawn.schem"
+        assert fetched["view_distance"] == 8
+
+    def test_create_job_defaults_schematic_fields_to_none(self, patched_db):
+        result = db.create_job(
+            repo_url="https://github.com/foo/bar",
+            ref="main",
+            owner="foo",
+            commit_hash="abc123def456",
+            versions=["1.21.8"],
+        )
+        assert result["schematic_file"] is None
+        assert result["view_distance"] is None
 
     def test_created_at_and_updated_at_are_valid_iso(self, patched_db):
         result = db.create_job(
@@ -572,6 +603,33 @@ class TestMigrate:
         assert not db_path.parent.exists()
         db.migrate(db_path)
         assert db_path.parent.exists()
+
+    def test_migrate_adds_schematic_columns_to_legacy_schema(self, tmp_path):
+        """A legacy jobs table without the schematic columns gets them added."""
+        db_path = tmp_path / "legacy.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""
+            CREATE TABLE jobs (
+                job_id TEXT PRIMARY KEY,
+                repo_url TEXT NOT NULL,
+                ref TEXT NOT NULL,
+                owner TEXT NOT NULL,
+                commit_hash TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'queued',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        conn.commit()
+        conn.close()
+
+        db.migrate(db_path)
+
+        conn = sqlite3.connect(str(db_path))
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(jobs)")}
+        conn.close()
+        assert "schematic_file" in cols
+        assert "view_distance" in cols
 
 
 # ---------------------------------------------------------------------------

@@ -489,3 +489,170 @@ class TestServerSetupService:
 
         # PicoLimbo should be terminated
         mock_pico_proc.terminate.assert_called_once()
+
+
+# ============================================================================
+# ServerSetupService — schematic + server.toml
+# ============================================================================
+
+
+class TestServerSetupSchematic:
+    """Schematic staging and PicoLimbo server.toml generation."""
+
+    @pytest.fixture
+    def service(self, mock_config_writer):
+        from src.proxy.factory import ProxyFactory
+
+        proxy_factory = MagicMock(spec=ProxyFactory)
+        proxy_factory.create.return_value = None
+        return ServerSetupService(proxy_factory, mock_config_writer)
+
+    @pytest.fixture
+    def dirs(self, tmp_path):
+        proxy_dir = tmp_path / "proxy"
+        proxy_dir.mkdir()
+        plugins_dir = tmp_path / "plugins"
+        plugins_dir.mkdir()
+        webui_dir = tmp_path / "webui"
+        webui_dir.mkdir()
+        return proxy_dir, plugins_dir, webui_dir
+
+    @pytest.fixture
+    def schematics_dir(self, tmp_path):
+        schematics = tmp_path / "schematics"
+        schematics.mkdir()
+        return schematics
+
+    def test_writes_server_toml_without_schematic(
+        self, service, mock_job_no_proxy, temp_builds_dir, dirs, mock_config_writer
+    ):
+        """Direct mode: server.toml has empty schematic, default view distance, no bind."""
+        from src.infrastructure.config_writer import build_server_config
+
+        proxy_dir, plugins_dir, webui_dir = dirs
+        with patch("subprocess.Popen"):
+            service.setup(mock_job_no_proxy, temp_builds_dir, proxy_dir, plugins_dir, webui_dir)
+
+        expected = build_server_config(schematic_file=None, view_distance=None)
+        mock_config_writer.write_server_toml.assert_called_once_with(
+            proxy_dir / "server.toml", expected
+        )
+        # Direct mode keeps the default bind — the key must be absent
+        assert "bind" not in expected
+
+    def test_writes_server_toml_with_schematic_and_view_distance(
+        self,
+        service,
+        temp_builds_dir,
+        dirs,
+        mock_config_writer,
+        schematics_dir,
+    ):
+        """Schematic path (absolute, staged) and view distance land in server.toml."""
+        from src.infrastructure.config_writer import build_server_config
+
+        job = _make_schematic_job(schematic_file="spawn.schem", view_distance=8)
+        (schematics_dir / "spawn.schem").write_bytes(b"fake-schem")
+        proxy_dir, plugins_dir, webui_dir = dirs
+
+        with patch(
+            "src.application.server_setup_service.SCHEMATICS_DIR", schematics_dir
+        ), patch("subprocess.Popen"):
+            service.setup(job, temp_builds_dir, proxy_dir, plugins_dir, webui_dir)
+
+        expected = build_server_config(
+            schematic_file=str(proxy_dir / "spawn.schem"), view_distance=8
+        )
+        mock_config_writer.write_server_toml.assert_called_once_with(
+            proxy_dir / "server.toml", expected
+        )
+
+    def test_stages_schematic_into_proxy_dir(
+        self, service, temp_builds_dir, dirs, schematics_dir
+    ):
+        """The uploaded .schem is copied next to server.toml."""
+        job = _make_schematic_job(schematic_file="spawn.schem")
+        (schematics_dir / "spawn.schem").write_bytes(b"fake-schem")
+        proxy_dir, plugins_dir, webui_dir = dirs
+
+        with patch(
+            "src.application.server_setup_service.SCHEMATICS_DIR", schematics_dir
+        ), patch("subprocess.Popen"):
+            service.setup(job, temp_builds_dir, proxy_dir, plugins_dir, webui_dir)
+
+        staged = proxy_dir / "spawn.schem"
+        assert staged.is_file()
+        assert staged.read_bytes() == b"fake-schem"
+
+    def test_missing_schematic_fails_before_pico_limbo_starts(
+        self, service, mock_proxy_manager, temp_builds_dir, dirs, schematics_dir
+    ):
+        """A schematic that was deleted after job creation fails the job clearly."""
+        job = _make_schematic_job(schematic_file="gone.schem")
+        proxy_dir, plugins_dir, webui_dir = dirs
+
+        with patch(
+            "src.application.server_setup_service.SCHEMATICS_DIR", schematics_dir
+        ), patch("subprocess.Popen") as mock_popen:
+            with pytest.raises(RuntimeError, match="Schematic file not found"):
+                service.setup(job, temp_builds_dir, proxy_dir, plugins_dir, webui_dir)
+
+        mock_popen.assert_not_called()
+
+    def test_proxy_mode_binds_internal_port(
+        self,
+        service,
+        mock_job,
+        temp_builds_dir,
+        dirs,
+        mock_config_writer,
+    ):
+        """Behind the proxy, PicoLimbo must bind the internal port (proxy owns 25565)."""
+        proxy_dir, plugins_dir, webui_dir = dirs
+        with patch("subprocess.Popen"):
+            service.setup(mock_job, temp_builds_dir, proxy_dir, plugins_dir, webui_dir)
+
+        args, _ = mock_config_writer.write_server_toml.call_args
+        assert args[1]["bind"] == "127.0.0.1:30066"
+
+    def test_pico_limbo_started_with_config_flag(
+        self, service, mock_job_no_proxy, temp_builds_dir, dirs
+    ):
+        """The binary is launched with --config pointing at the generated server.toml."""
+        proxy_dir, plugins_dir, webui_dir = dirs
+        with patch("subprocess.Popen") as mock_popen:
+            service.setup(mock_job_no_proxy, temp_builds_dir, proxy_dir, plugins_dir, webui_dir)
+
+        cmd = mock_popen.call_args[0][0]
+        assert cmd[-2:] == ["--config", str(proxy_dir / "server.toml")]
+
+
+def _make_schematic_job(**overrides):
+    """Build a Job with schematic fields for setup tests."""
+    from src.domain.job import Job
+    from src.domain.value_objects import (
+        CommitHash,
+        ForwardingMethod,
+        JobId,
+        JobStatus,
+        ProxyType,
+        RepoUrl,
+        Version,
+    )
+
+    defaults = {
+        "job_id": JobId("schem-job"),
+        "repo_url": RepoUrl("https://github.com/test-owner/test-repo.git"),
+        "ref": "abc123def456",
+        "commit_hash": CommitHash("abc123def456789012345678901234567890abcd"),
+        "status": JobStatus.TESTING,
+        "versions": [Version.from_string("1.21.8")],
+        "proxy_type": ProxyType.NONE,
+        "forwarding_method": ForwardingMethod.NONE,
+        "plugins": None,
+        "login_wait_timeout": 30,
+        "schematic_file": None,
+        "view_distance": None,
+    }
+    defaults.update(overrides)
+    return Job(**defaults)

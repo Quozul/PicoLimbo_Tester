@@ -86,6 +86,7 @@ class TestSerialization:
             "plugins", "login_wait_timeout", "test_results",
             "artifact_path", "created_at", "updated_at",
             "current_step", "error_message", "eta_seconds",
+            "schematic_file", "view_distance",
         }
         assert set(d.keys()) == expected_keys
 
@@ -154,6 +155,26 @@ class TestSerialization:
         d = job.to_dict()
         restored = Job.from_dict(d)
         assert restored.test_results == {}
+
+    def test_round_trip_schematic_fields(self):
+        job = _make_job(schematic_file="spawn.schem", view_distance=8)
+        d = job.to_dict()
+        assert d["schematic_file"] == "spawn.schem"
+        assert d["view_distance"] == 8
+
+        restored = Job.from_dict(d)
+        assert restored.schematic_file == "spawn.schem"
+        assert restored.view_distance == 8
+
+    def test_from_dict_defaults_schematic_fields_when_missing(self):
+        job = _make_job()
+        d = job.to_dict()
+        del d["schematic_file"]
+        del d["view_distance"]
+
+        restored = Job.from_dict(d)
+        assert restored.schematic_file is None
+        assert restored.view_distance is None
 
 
 # ---------------------------------------------------------------------------

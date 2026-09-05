@@ -306,6 +306,7 @@ class TestCreateJob:
             repo_url, ref, "Quozul",
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", versions,
             "none", "modern", None, None, 30,
+            None, None,
         )
 
     def test_creates_job_with_empty_versions_when_none(self):
@@ -332,6 +333,7 @@ class TestCreateJob:
             repo_url, ref, "Quozul",
             "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", [],
             "none", "modern", None, None, 30,
+            None, None,
         )
 
     def test_creates_job_with_versions_list(self):
@@ -359,4 +361,5 @@ class TestCreateJob:
             repo_url, ref, "Quozul",
             "cccccccccccccccccccccccccccccccccccccccc", versions,
             "none", "modern", None, None, 30,
+            None, None,
         )

@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/select"
 import { VersionSelector } from "@/components/VersionSelector"
 import { VelocityConfigDialog } from "@/components/VelocityConfigDialog"
+import { SchematicConfigDialog } from "@/components/SchematicConfigDialog"
 import {
   createJob,
   type JobCreateInput,
@@ -18,7 +19,7 @@ import {
   ProxyOptions,
 } from "@/lib/api"
 import { ALL_VERSION_LABELS } from "@/lib/versions"
-import { Loader2, Play, Server, Settings2 } from "lucide-react"
+import { Box, Loader2, Play, Server, Settings2 } from "lucide-react"
 
 interface JobFormProps {
   onJobCreated: (job: JobInfo) => void
@@ -36,6 +37,11 @@ export function JobForm({ onJobCreated }: JobFormProps) {
     new Set()
   )
   const [showConfigDialog, setShowConfigDialog] = useState(false)
+  const [showSchematicDialog, setShowSchematicDialog] = useState(false)
+  const [selectedSchematic, setSelectedSchematic] = useState<string | null>(
+    null
+  )
+  const [viewDistance, setViewDistance] = useState(2)
   const [selectedVersions, setSelectedVersions] = useState<Set<string>>(
     new Set()
   )
@@ -64,6 +70,8 @@ export function JobForm({ onJobCreated }: JobFormProps) {
           forwarding_method: forwardingMethod,
           plugins: selectedPlugins.size > 0 ? Array.from(selectedPlugins) : undefined,
           login_wait_timeout: loginWaitTimeout,
+          schematic_file: selectedSchematic,
+          view_distance: viewDistance,
         }
 
         const job = await createJob(input)
@@ -74,7 +82,7 @@ export function JobForm({ onJobCreated }: JobFormProps) {
         setLoading(false)
       }
     },
-    [repoUrl, ref, proxy, forwardingMethod, loginWaitTimeout, selectedPlugins, selectedVersions, onJobCreated]
+    [repoUrl, ref, proxy, forwardingMethod, loginWaitTimeout, selectedPlugins, selectedSchematic, viewDistance, selectedVersions, onJobCreated]
   )
 
   return (
@@ -153,6 +161,33 @@ export function JobForm({ onJobCreated }: JobFormProps) {
         onForwardingMethodChange={setForwardingMethod}
         selectedPlugins={Array.from(selectedPlugins)}
         onSelectedPluginsChange={(pluginNames) => setSelectedPluginsState(new Set(pluginNames))}
+      />
+
+      {/* World Schematic Button */}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="w-full gap-2 text-xs"
+        onClick={() => setShowSchematicDialog(true)}
+      >
+        <Box className="size-3" />
+        Configure World Schematic
+        {selectedSchematic && (
+          <span className="ml-auto max-w-[120px] truncate text-muted-foreground">
+            {selectedSchematic}
+          </span>
+        )}
+      </Button>
+
+      {/* World Schematic Dialog */}
+      <SchematicConfigDialog
+        open={showSchematicDialog}
+        onOpenChange={setShowSchematicDialog}
+        selectedSchematic={selectedSchematic}
+        onSelectedSchematicChange={setSelectedSchematic}
+        viewDistance={viewDistance}
+        onViewDistanceChange={setViewDistance}
       />
 
       {/* Login Wait Timeout */}

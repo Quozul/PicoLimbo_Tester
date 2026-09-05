@@ -143,20 +143,81 @@ def _toml_value(value: Any) -> str:
     return str(value)
 
 
-def _manual_toml_dump(data: dict[str, Any], indent: int = 0) -> str:
-    """Serialize a dict to TOML string (fallback when tomli-w is unavailable)."""
+def _manual_toml_dump(data: dict[str, Any], table_path: str = "") -> str:
+    """Serialize a dict to a TOML string (fallback when tomli-w is unavailable).
+
+    Emits valid TOML: scalar keys before sub-table headers, and sub-tables
+    as dotted ``[table.path]`` headers at column zero (TOML requires table
+    headers to start at the beginning of the line). Keys are emitted
+    verbatim — callers are responsible for using the correct key style
+    (kebab-case for Velocity, snake_case for PicoLimbo).
+    """
     lines: list[str] = []
-    prefix = "  " * indent
+
+    if table_path:
+        lines.append(f"[{table_path}]")
+
+    # Scalar keys first — once a sub-table header is open, any further
+    # keys would belong to that sub-table.
+    for key, value in data.items():
+        if not isinstance(value, dict):
+            lines.append(f"{key} = {_toml_value(value)}")
 
     for key, value in data.items():
-        formatted_key = key.replace("_", "-")
         if isinstance(value, dict):
-            lines.append(f"{prefix}[{formatted_key}]")
-            lines.append(_manual_toml_dump(value, indent + 1))
-        else:
-            lines.append(f"{prefix}{formatted_key} = {_toml_value(value)}")
+            path = f"{table_path}.{key}" if table_path else key
+            lines.append(_manual_toml_dump(value, path))
 
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# PicoLimbo server.toml
+# ---------------------------------------------------------------------------
+
+# Default view distance in chunks (matches PicoLimbo's built-in default)
+DEFAULT_VIEW_DISTANCE = 2
+
+
+def build_server_config(
+    schematic_file: str | None = None,
+    view_distance: int | None = None,
+    bind: str | None = None,
+) -> dict[str, Any]:
+    """Build the configuration dict for PicoLimbo's ``server.toml``.
+
+    Only the keys that differ from PicoLimbo's built-in defaults are
+    emitted; omitted keys fall back to ``Config::default()`` on load.
+    Note that ``[world.experimental]`` must always contain all three
+    keys (``view_distance``, ``schematic_file``, ``lock_time``) because
+    PicoLimbo defines no per-field defaults for that table.
+
+    Args:
+        schematic_file: Filename of a ``.schem`` to load at spawn,
+            or ``None``/empty to disable schematic loading.
+        view_distance: Number of chunks sent to clients.
+            Defaults to :data:`DEFAULT_VIEW_DISTANCE`.
+        bind: Socket address the server should bind to
+            (e.g. ``"127.0.0.1:30066"``). Omitted when ``None``.
+
+    Returns:
+        Dict serializable to TOML via :meth:`ConfigWriter.write_server_toml`.
+    """
+    config: dict[str, Any] = {}
+    if bind is not None:
+        config["bind"] = bind
+    config["world"] = {
+        "experimental": {
+            "view_distance": (
+                view_distance
+                if view_distance is not None
+                else DEFAULT_VIEW_DISTANCE
+            ),
+            "schematic_file": schematic_file or "",
+            "lock_time": False,
+        }
+    }
+    return config
 
 
 # ---------------------------------------------------------------------------
@@ -249,16 +310,38 @@ class ConfigWriter:
             config: Configuration dict to serialize.
         """
         logger.debug("Generating velocity.toml")
+        self._write_toml(output_path, config)
+        logger.debug("Wrote velocity.toml to %s", output_path)
 
+    # -- server.toml (PicoLimbo) --------------------------------------------
+
+    def write_server_toml(self, output_path: Path, config: dict[str, Any]) -> None:
+        """Write PicoLimbo's server.toml using tomli-w or manual fallback.
+
+        Args:
+            output_path: Path to write the TOML file to.
+            config: Configuration dict to serialize, typically produced
+                by :func:`build_server_config`.
+        """
+        logger.debug("Generating PicoLimbo server.toml")
+        self._write_toml(output_path, config)
+        logger.debug("Wrote server.toml to %s", output_path)
+
+    # -- shared TOML output ---------------------------------------------------
+
+    def _write_toml(self, output_path: Path, data: dict[str, Any]) -> None:
+        """Serialize *data* to *output_path* as TOML.
+
+        Uses ``tomli_w`` when available, otherwise falls back to
+        :func:`_manual_toml_dump`.
+        """
         _ensure_parent_dir(output_path)
 
         try:
             import tomli_w
             with open(output_path, "wb") as f:
-                tomli_w.dump(config, f)
+                tomli_w.dump(data, f)
         except ImportError:
-            content = _manual_toml_dump(config)
+            content = _manual_toml_dump(data)
             with open(output_path, "w") as f:
                 f.write(content)
-
-        logger.debug("Wrote velocity.toml to %s", output_path)

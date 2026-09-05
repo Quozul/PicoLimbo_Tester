@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -17,17 +18,25 @@ if TYPE_CHECKING:
 
 from ..config import (
     PICO_LIMBO_INTERNAL_PORT,
+    SCHEMATICS_DIR,
     SERVER_ADDRESS,
 )
 from ..domain.job import Job
 from ..domain.value_objects import ProxyType
-from ..infrastructure.config_writer import ConfigWriter, ServerEntry
+from ..infrastructure.config_writer import (
+    ConfigWriter,
+    ServerEntry,
+    build_server_config,
+)
 from ..proxy.factory import ProxyFactory
 from .server_context import ServerContext
 
 logger = logging.getLogger(__name__)
 
 __all__ = ["ServerSetupService"]
+
+# PicoLimbo config file name (written into the per-job stage directory)
+SERVER_CONFIG_FILENAME = "server.toml"
 
 
 class ServerSetupService:
@@ -90,6 +99,9 @@ class ServerSetupService:
         if not artifact_path.exists():
             raise RuntimeError(f"Artifact not found: {artifact_path}")
 
+        # Stage the schematic (fail fast before any subprocess is started)
+        staged_schematic = self._stage_schematic(job, proxy_dir)
+
         # Start proxy if needed
         proxy = self._proxy_factory.create(job.proxy_type)
         proxy_proc: subprocess.Popen[str] | None = None
@@ -115,10 +127,29 @@ class ServerSetupService:
             proxy_dir / "options.txt",
             job.mc_version,
         )
+        # PicoLimbo server config: behind the proxy it must bind the internal
+        # port (the proxy owns the public 25565); in direct mode the default
+        # bind applies, so the key is omitted.
+        bind = (
+            f"127.0.0.1:{PICO_LIMBO_INTERNAL_PORT}"
+            if job.proxy_type != ProxyType.NONE
+            else None
+        )
+        server_config = build_server_config(
+            schematic_file=(
+                str(staged_schematic) if staged_schematic is not None else None
+            ),
+            view_distance=job.view_distance,
+            bind=bind,
+        )
+        self._config.write_server_toml(
+            proxy_dir / SERVER_CONFIG_FILENAME, server_config
+        )
 
         # Start PicoLimbo subprocess
         pico_limbo_proc = self._start_pico_limbo(
             artifact_path=artifact_path,
+            config_path=proxy_dir / SERVER_CONFIG_FILENAME,
             proxy_port=PICO_LIMBO_INTERNAL_PORT,
             mc_version=str(job.mc_version),
             login_wait_timeout=job.login_wait_timeout,
@@ -131,9 +162,51 @@ class ServerSetupService:
             lambda: self._cleanup(proxy, proxy_proc, pico_limbo_proc),
         )
 
+    def _stage_schematic(self, job: Job, proxy_dir: Path) -> Path | None:
+        """Copy the job's schematic into the stage directory.
+
+        PicoLimbo resolves ``world.experimental.schematic_file`` against
+        the process working directory, so callers should use the returned
+        absolute path in the generated ``server.toml``.
+
+        Parameters
+        ----------
+        job : Job
+            The job being executed.
+        proxy_dir : Path
+            Per-job stage directory.
+
+        Returns
+        -------
+        Path | None
+            Absolute path of the staged schematic, or ``None`` when the
+            job has no schematic.
+
+        Raises
+        ------
+        RuntimeError
+            If the schematic file is missing from the upload directory.
+        """
+        if not job.schematic_file:
+            return None
+
+        safe_name = Path(job.schematic_file).name
+        source = SCHEMATICS_DIR / safe_name
+        if not source.is_file():
+            raise RuntimeError(
+                f"Schematic file not found: {job.schematic_file} "
+                f"(looked in {SCHEMATICS_DIR})"
+            )
+
+        dest = proxy_dir / safe_name
+        shutil.copy2(str(source), str(dest))
+        logger.info("Copied schematic %s to %s", safe_name, dest)
+        return dest
+
     def _start_pico_limbo(
         self,
         artifact_path: Path,
+        config_path: Path,
         proxy_port: int,
         mc_version: str,
         login_wait_timeout: int,
@@ -144,6 +217,8 @@ class ServerSetupService:
         ----------
         artifact_path : Path
             Path to the PicoLimbo binary.
+        config_path : Path
+            Path to the generated ``server.toml`` (passed via ``--config``).
         proxy_port : int
             Port the proxy is listening on.
         mc_version : str
@@ -162,7 +237,7 @@ class ServerSetupService:
         env["PICO_LIMBO_LOGIN_WAIT_TIMEOUT"] = str(login_wait_timeout)
 
         proc = subprocess.Popen(
-            [str(artifact_path)],
+            [str(artifact_path), "--config", str(config_path)],
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
